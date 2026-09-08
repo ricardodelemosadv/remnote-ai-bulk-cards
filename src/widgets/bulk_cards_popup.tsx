@@ -17,6 +17,8 @@ function BulkCardsPopup() {
   const plugin = usePlugin();
   const [source, setSource] = useState<SourceSelection>();
   const [hasKey, setHasKey] = useState(false);
+  const [bridgeReady, setBridgeReady] = useState(false);
+  const [apiKeyInput, setApiKeyInput] = useState('');
   const [maxCards, setMaxCards] = useState(DEFAULT_MAX_CARDS);
   const [cards, setCards] = useState<DraftCard[]>([]);
   const [busy, setBusy] = useState(false);
@@ -29,8 +31,18 @@ function BulkCardsPopup() {
         plugin.storage.getSession<SourceSelection>(SOURCE_SESSION_KEY),
         plugin.storage.getLocal<string>(API_KEY_LOCAL_KEY),
       ]);
+      let localBridgeReady = false;
+      if (!apiKey) {
+        try {
+          const response = await fetch('http://localhost:8080/bridge/health');
+          localBridgeReady = response.ok && Boolean((await response.json()).ready);
+        } catch {
+          localBridgeReady = false;
+        }
+      }
       setSource(savedSource);
-      setHasKey(Boolean(apiKey));
+      setBridgeReady(localBridgeReady);
+      setHasKey(Boolean(apiKey) || localBridgeReady);
     })();
   }, [plugin]);
 
@@ -51,14 +63,26 @@ function BulkCardsPopup() {
     setHasKey(true);
   }
 
+  async function savePastedKey() {
+    const key = apiKeyInput.trim();
+    if (!key.startsWith('sk-')) {
+      setError('Cole uma chave válida da OpenAI.');
+      return;
+    }
+    await plugin.storage.setLocal(API_KEY_LOCAL_KEY, key);
+    setApiKeyInput('');
+    setError('');
+    setHasKey(true);
+  }
+
   async function generate() {
     if (!source) return;
     setBusy(true);
     setError('');
     try {
       const apiKey = await plugin.storage.getLocal<string>(API_KEY_LOCAL_KEY);
-      if (!apiKey) throw new Error('Importe sua chave da OpenAI antes de gerar.');
-      setCards(await generateCards(apiKey, source.sourceText, maxCards));
+      if (!apiKey && !bridgeReady) throw new Error('Conecte sua chave da OpenAI antes de gerar.');
+      setCards(await generateCards(apiKey || '', source.sourceText, maxCards));
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Não foi possível gerar os cartões.');
     } finally {
@@ -115,9 +139,22 @@ function BulkCardsPopup() {
         <section className="bulk-key-panel">
           <h2>Conectar sua IA</h2>
           <p>
-            Importe o arquivo <code>.env.local</code> que já contém a chave. Ela ficará somente
-            no armazenamento local deste plugin.
+            Cole sua chave ou importe o arquivo <code>.env.local</code>. Ela ficará somente no
+            armazenamento local deste plugin.
           </p>
+          <label>
+            Chave da OpenAI
+            <input
+              type="password"
+              autoComplete="off"
+              placeholder="sk-…"
+              value={apiKeyInput}
+              onChange={(event) => setApiKeyInput(event.target.value)}
+            />
+          </label>
+          <button className="bulk-primary" onClick={() => void savePastedKey()}>
+            Salvar chave
+          </button>
           <label className="bulk-file-button">
             Importar chave existente
             <input

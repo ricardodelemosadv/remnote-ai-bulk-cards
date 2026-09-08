@@ -5,6 +5,7 @@ import '../index.css';
 async function onActivate(plugin: ReactRNPlugin) {
   await plugin.app.registerWidget('selected_text_menu', WidgetLocation.SelectedTextMenu, {
     dimensions: { height: 'auto', width: '100%' },
+    widgetTabIcon: `${plugin.rootURL}magic.svg`,
     widgetTabTitle: 'Cartões em massa',
   });
 

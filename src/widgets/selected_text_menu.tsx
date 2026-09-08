@@ -1,11 +1,11 @@
-import { renderWidget, usePlugin, useTracker } from '@remnote/plugin-sdk';
+import { renderWidget, usePlugin, useTrackerPlugin } from '@remnote/plugin-sdk';
 import { readSelectedSource, openBulkCardsPopup } from '../lib/remnote';
 import '../style.css';
 import '../index.css';
 
 function SelectedTextMenu() {
   const plugin = usePlugin();
-  const hasSelection = useTracker(async (reactivePlugin) =>
+  const hasSelection = useTrackerPlugin(async (reactivePlugin) =>
     Boolean(await readSelectedSource(reactivePlugin)),
   );
 

@@ -1,6 +1,7 @@
 const { resolve } = require('path');
 var glob = require('glob');
 var path = require('path');
+var express = require('express');
 
 const HtmlWebpackPlugin = require('html-webpack-plugin');
 const { ESBuildMinifyPlugin } = require('esbuild-loader');
@@ -118,7 +119,64 @@ if (isProd) {
     watchFiles: ['src/*'],
     headers: {
       'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Private-Network': 'true',
       'Access-Control-Allow-Headers': 'baggage, sentry-trace',
+    },
+    setupMiddlewares: (middlewares, devServer) => {
+      const app = devServer.app;
+      const allowedOrigins = new Set([
+        'https://remnote.com',
+        'https://www.remnote.com',
+        'http://localhost:8080',
+      ]);
+
+      app.use('/bridge', (req, res, next) => {
+        const origin = req.headers.origin;
+        if (origin && allowedOrigins.has(origin)) {
+          res.setHeader('Access-Control-Allow-Origin', origin);
+        }
+        res.setHeader('Access-Control-Allow-Private-Network', 'true');
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+        res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
+        if (req.method === 'OPTIONS') {
+          res.sendStatus(204);
+          return;
+        }
+        next();
+      });
+
+      app.get('/bridge/health', (_req, res) => {
+        res.json({ ready: Boolean(process.env.OPENAI_API_KEY) });
+      });
+
+      app.post('/bridge/openai', express.json({ limit: '1mb' }), async (req, res) => {
+        const apiKey = process.env.OPENAI_API_KEY;
+        if (!apiKey) {
+          res.status(503).json({
+            error: { message: 'A chave da OpenAI não está configurada no serviço local.' },
+          });
+          return;
+        }
+
+        try {
+          const response = await fetch('https://api.openai.com/v1/responses', {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${apiKey}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(req.body),
+          });
+          const body = await response.text();
+          res.status(response.status).type('application/json').send(body);
+        } catch {
+          res.status(502).json({
+            error: { message: 'O serviço local não conseguiu acessar a OpenAI.' },
+          });
+        }
+      });
+
+      return middlewares;
     },
   };
 }

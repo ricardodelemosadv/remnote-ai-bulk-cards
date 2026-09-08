@@ -6,10 +6,13 @@ export async function generateCards(
   sourceText: string,
   maxCards: number,
 ): Promise<DraftCard[]> {
-  const response = await fetch('https://api.openai.com/v1/responses', {
+  const endpoint = apiKey
+    ? 'https://api.openai.com/v1/responses'
+    : 'http://localhost:8080/bridge/openai';
+  const response = await fetch(endpoint, {
     method: 'POST',
     headers: {
-      Authorization: `Bearer ${apiKey}`,
+      ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
