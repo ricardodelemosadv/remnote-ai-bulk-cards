@@ -1,11 +1,14 @@
 {
   "private": true,
   "name": "remnote-ai-bulk-cards",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "license": "MIT",
   "scripts": {
     "check-types": "tsc",
     "test:core": "shx rm -rf .test-build && esbuild src/lib/core.ts --bundle --platform=node --format=cjs --outfile=.test-build/core.cjs && node tests/core.test.cjs",
+    "test:backend": "node tests/backend.test.cjs",
+    "test:security": "node tests/client-security.test.cjs",
+    "test": "npm run test:core && npm run test:backend && npm run test:security",
     "dev": "cross-env NODE_ENV=development webpack-dev-server --color --progress --no-open",
     "build": "npx remnote-plugin validate && shx rm -rf dist && cross-env NODE_ENV=production webpack --color --progress && cd dist && bestzip ../PluginZip.zip ./*"
   },

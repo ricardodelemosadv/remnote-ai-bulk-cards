@@ -7,10 +7,10 @@
   "version": {
     "major": 0,
     "minor": 0,
-    "patch": 2
+    "patch": 3
   },
   "theme": [],
-  "enableOnMobile": false,
+  "enableOnMobile": true,
   "description": "Transforma uma seleção em vários flashcards revisáveis com a API da OpenAI.",
   "requestNative": false,
   "requiredScopes": [

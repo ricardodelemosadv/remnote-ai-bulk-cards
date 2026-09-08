@@ -1,6 +1,6 @@
 # IA — Cartões em Massa
 
-Plugin pessoal do RemNote que transforma o texto selecionado em uma prévia editável de flashcards usando a API da OpenAI.
+Plugin do RemNote para computador, Android e iPad que transforma o texto selecionado em uma prévia editável de flashcards usando a API da OpenAI por meio de um serviço HTTPS protegido.
 
 ## Uso
 
@@ -9,6 +9,7 @@ Plugin pessoal do RemNote que transforma o texto selecionado em uma prévia edit
 3. Gere os rascunhos, revise cada pergunta e resposta e desmarque o que não desejar.
 4. Confirme **Criar cartões**. Os cards serão incluídos abaixo do Rem de origem.
 
-Durante o desenvolvimento local, a chave fica somente na memória do serviço local e não é
-exposta ao navegador. A instalação publicada também permite armazenar a chave localmente no
-plugin. O ChatGPT não precisa estar aberto.
+A chave da OpenAI fica somente nas variáveis protegidas do servidor e nunca é incluída no plugin.
+O plugin armazena apenas um código revogável no espaço sincronizado do usuário, para funcionar em
+seus dispositivos. O ChatGPT e o computador não precisam estar abertos; é necessário acesso à
+internet para gerar os rascunhos.

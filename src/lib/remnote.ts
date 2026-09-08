@@ -1,5 +1,5 @@
 import type { RNPlugin } from '@remnote/plugin-sdk';
-import { SOURCE_SESSION_KEY, type DraftCard, type SourceSelection } from './constants';
+import type { DraftCard, SourceSelection } from './constants';
 
 export async function readSelectedSource(plugin: RNPlugin): Promise<SourceSelection | undefined> {
   const selection = await plugin.editor.getSelectedText();
@@ -7,16 +7,6 @@ export async function readSelectedSource(plugin: RNPlugin): Promise<SourceSelect
   const sourceText = (await plugin.richText.toString(selection.richText)).trim();
   if (!sourceText) return undefined;
   return { sourceText, sourceRemId: selection.remId };
-}
-
-export async function openBulkCardsPopup(plugin: RNPlugin): Promise<void> {
-  const source = await readSelectedSource(plugin);
-  if (!source) {
-    await plugin.app.toast('Selecione um trecho antes de criar cartões.');
-    return;
-  }
-  await plugin.storage.setSession(SOURCE_SESSION_KEY, source);
-  await plugin.widget.openPopup('bulk_cards_popup');
 }
 
 export async function createCardsUnderSource(

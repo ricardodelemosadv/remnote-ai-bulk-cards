@@ -1,13 +1,12 @@
 import { renderWidget, usePlugin } from '@remnote/plugin-sdk';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  API_KEY_LOCAL_KEY,
+  BRIDGE_TOKEN_SYNCED_KEY,
   DEFAULT_MAX_CARDS,
   SOURCE_SESSION_KEY,
   type DraftCard,
   type SourceSelection,
 } from '../lib/constants';
-import { parseEnvApiKey } from '../lib/core';
 import { generateCards } from '../lib/openai';
 import { createCardsUnderSource } from '../lib/remnote';
 import '../style.css';
@@ -16,33 +15,26 @@ import '../index.css';
 function BulkCardsPopup() {
   const plugin = usePlugin();
   const [source, setSource] = useState<SourceSelection>();
-  const [hasKey, setHasKey] = useState(false);
-  const [bridgeReady, setBridgeReady] = useState(false);
-  const [apiKeyInput, setApiKeyInput] = useState('');
+  const [loaded, setLoaded] = useState(false);
+  const [hasAccess, setHasAccess] = useState(false);
+  const [accessCodeInput, setAccessCodeInput] = useState('');
   const [maxCards, setMaxCards] = useState(DEFAULT_MAX_CARDS);
   const [cards, setCards] = useState<DraftCard[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [done, setDone] = useState(false);
+  const generatingRef = useRef(false);
+  const creatingRef = useRef(false);
 
   useEffect(() => {
     void (async () => {
-      const [savedSource, apiKey] = await Promise.all([
+      const [savedSource, bridgeToken] = await Promise.all([
         plugin.storage.getSession<SourceSelection>(SOURCE_SESSION_KEY),
-        plugin.storage.getLocal<string>(API_KEY_LOCAL_KEY),
+        plugin.storage.getSynced<string>(BRIDGE_TOKEN_SYNCED_KEY),
       ]);
-      let localBridgeReady = false;
-      if (!apiKey) {
-        try {
-          const response = await fetch('http://localhost:8080/bridge/health');
-          localBridgeReady = response.ok && Boolean((await response.json()).ready);
-        } catch {
-          localBridgeReady = false;
-        }
-      }
       setSource(savedSource);
-      setBridgeReady(localBridgeReady);
-      setHasKey(Boolean(apiKey) || localBridgeReady);
+      setHasAccess(Boolean(bridgeToken));
+      setLoaded(true);
     })();
   }, [plugin]);
 
@@ -51,47 +43,45 @@ function BulkCardsPopup() {
     [cards],
   );
 
-  async function importKey(file?: File) {
-    if (!file) return;
-    setError('');
-    const key = parseEnvApiKey(await file.text());
-    if (!key) {
-      setError('O arquivo não contém OPENAI_API_KEY.');
+  async function saveAccessCode() {
+    const accessCode = accessCodeInput.trim();
+    if (accessCode.length < 32 || /\s/.test(accessCode)) {
+      setError('Digite o código de acesso fornecido para este plugin.');
       return;
     }
-    await plugin.storage.setLocal(API_KEY_LOCAL_KEY, key);
-    setHasKey(true);
+    await plugin.storage.setSynced(BRIDGE_TOKEN_SYNCED_KEY, accessCode);
+    setAccessCodeInput('');
+    setError('');
+    setHasAccess(true);
   }
 
-  async function savePastedKey() {
-    const key = apiKeyInput.trim();
-    if (!key.startsWith('sk-')) {
-      setError('Cole uma chave válida da OpenAI.');
-      return;
-    }
-    await plugin.storage.setLocal(API_KEY_LOCAL_KEY, key);
-    setApiKeyInput('');
+  async function resetAccessCode() {
+    await plugin.storage.setSynced(BRIDGE_TOKEN_SYNCED_KEY, null);
+    setCards([]);
+    setHasAccess(false);
     setError('');
-    setHasKey(true);
   }
 
   async function generate() {
-    if (!source) return;
+    if (!source || generatingRef.current) return;
+    generatingRef.current = true;
     setBusy(true);
     setError('');
     try {
-      const apiKey = await plugin.storage.getLocal<string>(API_KEY_LOCAL_KEY);
-      if (!apiKey && !bridgeReady) throw new Error('Conecte sua chave da OpenAI antes de gerar.');
-      setCards(await generateCards(apiKey || '', source.sourceText, maxCards));
+      const bridgeToken = await plugin.storage.getSynced<string>(BRIDGE_TOKEN_SYNCED_KEY);
+      if (!bridgeToken) throw new Error('Configure o código de acesso antes de gerar.');
+      setCards(await generateCards(bridgeToken, source.sourceText, maxCards));
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Não foi possível gerar os cartões.');
     } finally {
+      generatingRef.current = false;
       setBusy(false);
     }
   }
 
   async function createCards() {
-    if (!source || !enabledCount) return;
+    if (!source || !enabledCount || creatingRef.current) return;
+    creatingRef.current = true;
     setBusy(true);
     setError('');
     try {
@@ -101,6 +91,7 @@ function BulkCardsPopup() {
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Não foi possível criar os cartões.');
     } finally {
+      creatingRef.current = false;
       setBusy(false);
     }
   }
@@ -111,10 +102,55 @@ function BulkCardsPopup() {
     );
   }
 
+  if (!loaded) {
+    return (
+      <main className="bulk-popup">
+        <p>Carregando…</p>
+      </main>
+    );
+  }
+
   if (!source) {
     return (
       <main className="bulk-popup">
-        <p>Seleção não encontrada. Feche e selecione o trecho novamente.</p>
+        <header className="bulk-header">
+          <div>
+            <p className="bulk-eyebrow">REMNOTE + OPENAI</p>
+            <h1>Configurar IA</h1>
+          </div>
+          <button className="bulk-close" onClick={() => plugin.widget.closePopup()}>×</button>
+        </header>
+        {!hasAccess ? (
+          <section className="bulk-key-panel">
+            <h2>Ativar nos seus dispositivos</h2>
+            <p>
+              Digite o código privado do serviço. Ele será sincronizado pela sua conta do RemNote;
+              a chave da OpenAI continuará somente no servidor.
+            </p>
+            <label>
+              Código de acesso
+              <input
+                type="password"
+                autoComplete="off"
+                placeholder="Código privado…"
+                value={accessCodeInput}
+                onChange={(event) => setAccessCodeInput(event.target.value)}
+              />
+            </label>
+            <button className="bulk-primary" onClick={() => void saveAccessCode()}>
+              Salvar código
+            </button>
+          </section>
+        ) : (
+          <section className="bulk-success">
+            <h2>Serviço conectado</h2>
+            <p>O código está disponível para o plugin nos seus dispositivos sincronizados.</p>
+            <button className="bulk-secondary" onClick={() => void resetAccessCode()}>
+              Trocar código
+            </button>
+          </section>
+        )}
+        {error && <p className="bulk-error">{error}</p>}
       </main>
     );
   }
@@ -135,34 +171,26 @@ function BulkCardsPopup() {
         <p>{source.sourceText}</p>
       </section>
 
-      {!hasKey ? (
+      {!hasAccess ? (
         <section className="bulk-key-panel">
-          <h2>Conectar sua IA</h2>
+          <h2>Ativar a IA neste dispositivo</h2>
           <p>
-            Cole sua chave ou importe o arquivo <code>.env.local</code>. Ela ficará somente no
-            armazenamento local deste plugin.
+            Digite o código de acesso do serviço. Sua chave da OpenAI permanece protegida no
+            servidor e nunca é enviada ao tablet ou ao RemNote.
           </p>
           <label>
-            Chave da OpenAI
+            Código de acesso
             <input
               type="password"
               autoComplete="off"
-              placeholder="sk-…"
-              value={apiKeyInput}
-              onChange={(event) => setApiKeyInput(event.target.value)}
+              placeholder="Código privado…"
+              value={accessCodeInput}
+              onChange={(event) => setAccessCodeInput(event.target.value)}
             />
           </label>
-          <button className="bulk-primary" onClick={() => void savePastedKey()}>
-            Salvar chave
+          <button className="bulk-primary" onClick={() => void saveAccessCode()}>
+            Salvar e continuar
           </button>
-          <label className="bulk-file-button">
-            Importar chave existente
-            <input
-              type="file"
-              accept=".env,.local,text/plain"
-              onChange={(event) => void importKey(event.target.files?.[0])}
-            />
-          </label>
         </section>
       ) : cards.length === 0 ? (
         <section className="bulk-generate-panel">
@@ -180,6 +208,9 @@ function BulkCardsPopup() {
           </label>
           <button className="bulk-primary" disabled={busy} onClick={() => void generate()}>
             {busy ? 'Gerando rascunhos…' : 'Gerar rascunhos com IA'}
+          </button>
+          <button className="bulk-secondary" disabled={busy} onClick={() => void resetAccessCode()}>
+            Trocar código
           </button>
         </section>
       ) : done ? (
@@ -239,7 +270,10 @@ function BulkCardsPopup() {
       )}
 
       {error && <p className="bulk-error">{error}</p>}
-      <footer>A seleção só é gravada quando você confirma “Criar cartões”.</footer>
+      <footer>
+        O trecho selecionado é enviado ao serviço protegido e à OpenAI. Nada é gravado na nota
+        antes de você confirmar “Criar cartões”.
+      </footer>
     </main>
   );
 }

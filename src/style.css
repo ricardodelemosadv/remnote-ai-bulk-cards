@@ -51,8 +51,8 @@ body,
 
 button, input, textarea { font: inherit; }
 
-.bulk-selection-action { padding: 6px; }
-.bulk-selection-button { width: 100%; white-space: nowrap; }
+.bulk-selection-action { padding: 6px; touch-action: manipulation; }
+.bulk-selection-button { width: 100%; min-height: 44px; white-space: nowrap; }
 
 .bulk-popup {
   min-height: 100%;
@@ -66,7 +66,7 @@ button, input, textarea { font: inherit; }
 .bulk-header h1 { margin: 2px 0 4px; font-size: 28px; line-height: 1.15; }
 .bulk-eyebrow { margin: 0; color: #6d5bd0; font-weight: 800; font-size: 11px; letter-spacing: .14em; }
 .bulk-subtitle { margin: 0; opacity: .72; }
-.bulk-close { border: 0; background: transparent; color: inherit; cursor: pointer; font-size: 28px; line-height: 1; }
+.bulk-close { min-width: 44px; min-height: 44px; border: 0; background: transparent; color: inherit; cursor: pointer; font-size: 28px; line-height: 1; }
 
 .bulk-source, .bulk-key-panel, .bulk-generate-panel, .bulk-success {
   margin-top: 18px;
@@ -76,7 +76,11 @@ button, input, textarea { font: inherit; }
   background: rgba(109,91,208,.06);
 }
 .bulk-source p { margin: 8px 0 0; max-height: 128px; overflow: auto; white-space: pre-wrap; }
-.bulk-key-panel h2, .bulk-success h2 { margin-top: 0; }
+.bulk-key-panel { display: grid; gap: 12px; }
+.bulk-key-panel h2, .bulk-key-panel p, .bulk-success h2 { margin: 0; }
+.bulk-key-panel label { display: grid; gap: 6px; font-weight: 700; }
+.bulk-key-panel input { width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid rgba(127,127,127,.35); background: var(--rn-clr-background-primary, #fff); color: inherit; }
+.bulk-key-panel .bulk-primary { justify-self: start; }
 .bulk-key-panel code { padding: 2px 5px; border-radius: 5px; background: rgba(0,0,0,.08); }
 
 .bulk-file-button, .bulk-primary, .bulk-secondary {
@@ -111,6 +115,35 @@ button, input, textarea { font: inherit; }
 .bulk-actions { position: sticky; bottom: 0; display: flex; justify-content: flex-end; gap: 10px; padding: 12px 0; background: var(--rn-clr-background-primary, #f8fafc); }
 .bulk-error { padding: 10px 12px; border-radius: 9px; color: #991b1b; background: #fee2e2; }
 .bulk-popup footer { margin-top: 16px; text-align: center; font-size: 12px; opacity: .6; }
+
+@media (max-width: 720px), (pointer: coarse) {
+  .bulk-popup {
+    max-height: 100dvh;
+    overflow-y: auto;
+    padding-top: max(14px, env(safe-area-inset-top));
+    padding-right: max(14px, env(safe-area-inset-right));
+    padding-bottom: max(18px, env(safe-area-inset-bottom));
+    padding-left: max(14px, env(safe-area-inset-left));
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .bulk-header { gap: 12px; }
+  .bulk-header h1 { font-size: 24px; }
+  .bulk-source, .bulk-key-panel, .bulk-generate-panel, .bulk-success { margin-top: 12px; padding: 12px; }
+  .bulk-source p { max-height: 22dvh; }
+  .bulk-generate-panel { align-items: stretch; flex-direction: column; }
+  .bulk-generate-panel input { width: 100%; }
+  .bulk-drafts-title { align-items: flex-start; flex-direction: column; }
+  .bulk-card textarea { min-height: 96px; }
+  .bulk-actions { flex-wrap: wrap; padding-bottom: max(12px, env(safe-area-inset-bottom)); }
+  .bulk-actions > button, .bulk-generate-panel .bulk-primary { flex: 1 1 160px; }
+
+  .bulk-file-button, .bulk-primary, .bulk-secondary, input, textarea {
+    min-height: 44px;
+  }
+
+  input, textarea { font-size: 16px; }
+}
 
 @media (prefers-color-scheme: dark) {
   .bulk-popup { background: #15171c; color: #f5f7fb; }
