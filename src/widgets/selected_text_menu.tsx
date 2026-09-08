@@ -1,7 +1,8 @@
 import { renderWidget, usePlugin, useTrackerPlugin } from '@remnote/plugin-sdk';
-import type { RichTextFormatName } from '@remnote/plugin-sdk';
-import { useState, useEffect, useCallback } from 'react';
-import { readSelectedSource, openBulkCardsPopup, applyFormatToSelection } from '../lib/remnote';
+import type { RichTextFormatName, TextSelection } from '@remnote/plugin-sdk';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { SOURCE_SESSION_KEY, type SourceSelection } from '../lib/constants';
+import { applyFormatToSelection } from '../lib/remnote';
 import {
   speak,
   stopSpeaking,
@@ -18,66 +19,95 @@ import '../index.css';
 function SelectedTextMenu() {
   const plugin = usePlugin();
 
-  const hasSelection = useTrackerPlugin(async (reactivePlugin) =>
-    Boolean(await readSelectedSource(reactivePlugin)),
-  );
+  // Cache the selection data the moment the tracker detects it.
+  // This avoids re-reading getSelectedText() on button click, when
+  // the selection may already be gone.
+  const cachedSourceRef = useRef<SourceSelection | undefined>();
+  const cachedSelRef = useRef<TextSelection | undefined>();
+
+  const hasSelection = useTrackerPlugin(async (reactivePlugin) => {
+    const sel = await reactivePlugin.editor.getSelectedText();
+    if (!sel) {
+      cachedSourceRef.current = undefined;
+      cachedSelRef.current = undefined;
+      return false;
+    }
+    const sourceText = (await reactivePlugin.richText.toString(sel.richText)).trim();
+    if (!sourceText) {
+      cachedSourceRef.current = undefined;
+      cachedSelRef.current = undefined;
+      return false;
+    }
+    cachedSourceRef.current = { sourceText, sourceRemId: sel.remId };
+    cachedSelRef.current = sel;
+    return true;
+  });
 
   const [speed, setSpeed] = useState<TtsSpeed>(DEFAULT_TTS_SPEED);
   const [speaking, setSpeaking] = useState(false);
 
-  // Load persisted speed from plugin settings
   useEffect(() => {
     plugin.settings.getSetting<TtsSpeed>(TTS_SPEED_SETTING).then((v) => {
       if (v) setSpeed(v);
     });
   }, []);
 
-  // Sync speaking state while speech plays
   useEffect(() => {
     if (!speaking) return;
     const timer = setInterval(() => {
-      if (!isSpeaking()) {
-        setSpeaking(false);
-        clearInterval(timer);
-      }
+      if (!isSpeaking()) { setSpeaking(false); clearInterval(timer); }
     }, 300);
     return () => clearInterval(timer);
   }, [speaking]);
 
-  const fmt = (format: RichTextFormatName) => () => applyFormatToSelection(plugin, format);
+  // Formatting: use cached TextSelection to keep range + richText
+  const handleFormat = useCallback(async (format: RichTextFormatName) => {
+    const sel = cachedSelRef.current;
+    if (!sel) return;
+    const formatted = await plugin.richText.toggleTextFormatOnRange(
+      sel.richText, sel.range.start, sel.range.end, format,
+    );
+    const rem = await plugin.rem.findOne(sel.remId);
+    if (rem) await rem.setText(formatted);
+    else await plugin.editor.setText(formatted);
+  }, [plugin]);
 
-  const handleSpeak = useCallback(async () => {
-    if (speaking) {
-      stopSpeaking();
-      setSpeaking(false);
+  const fmt = (format: RichTextFormatName) => () => handleFormat(format);
+
+  // AI cards: use cached source — do NOT call readSelectedSource again
+  const handleOpenCards = useCallback(async () => {
+    const source = cachedSourceRef.current;
+    if (!source) {
+      await plugin.app.toast('Selecione um trecho antes de criar cartões.');
       return;
     }
-    const source = await readSelectedSource(plugin);
+    await plugin.storage.setSession(SOURCE_SESSION_KEY, source);
+    await plugin.widget.openPopup('bulk_cards_popup');
+  }, [plugin]);
+
+  // TTS: use cached source text
+  const handleSpeak = useCallback(async () => {
+    if (speaking) { stopSpeaking(); setSpeaking(false); return; }
+    const source = cachedSourceRef.current;
     if (!source) return;
     speak(source.sourceText, speed);
     setSpeaking(true);
-  }, [speaking, speed, plugin]);
+  }, [speaking, speed]);
 
   const handleCycleSpeed = useCallback(async () => {
     const next = nextSpeed(speed);
     setSpeed(next);
-    // Persist in settings
     await plugin.storage.setSynced(TTS_SPEED_SETTING, next);
-    // If already speaking, restart with new speed
     if (isSpeaking()) {
       stopSpeaking();
       setSpeaking(false);
-      const source = await readSelectedSource(plugin);
-      if (source) {
-        speak(source.sourceText, next);
-        setSpeaking(true);
-      }
+      const source = cachedSourceRef.current;
+      if (source) { speak(source.sourceText, next); setSpeaking(true); }
     }
   }, [speed, plugin]);
 
   return (
     <div className="sel-toolbar-wrap">
-      {/* Formatting */}
       <button className="sel-btn sel-fmt" disabled={!hasSelection} title="Negrito" onClick={fmt('bold')}>
         <b>B</b>
       </button>
@@ -87,14 +117,12 @@ function SelectedTextMenu() {
 
       <div className="sel-divider" />
 
-      {/* Highlight colours */}
       <button className="sel-btn sel-color sel-yellow" disabled={!hasSelection} title="Destacar amarelo" onClick={fmt('Yellow')} aria-label="Destacar amarelo" />
       <button className="sel-btn sel-color sel-green"  disabled={!hasSelection} title="Destacar verde"    onClick={fmt('Green')}  aria-label="Destacar verde" />
       <button className="sel-btn sel-color sel-red"    disabled={!hasSelection} title="Destacar vermelho" onClick={fmt('Red')}    aria-label="Destacar vermelho" />
 
       <div className="sel-divider" />
 
-      {/* TTS */}
       <button
         className={`sel-btn sel-fmt sel-tts${speaking ? ' sel-tts-active' : ''}`}
         disabled={!hasSelection && !speaking}
@@ -103,22 +131,17 @@ function SelectedTextMenu() {
       >
         {speaking ? '⏹' : '🔊'}
       </button>
-      <button
-        className="sel-btn sel-speed"
-        title="Velocidade da leitura (clique para mudar)"
-        onClick={handleCycleSpeed}
-      >
+      <button className="sel-btn sel-speed" title="Velocidade da leitura (clique para mudar)" onClick={handleCycleSpeed}>
         {formatSpeed(speed)}
       </button>
 
       <div className="sel-divider" />
 
-      {/* AI cards */}
       <button
         className="sel-btn sel-ai-btn bulk-primary"
         disabled={!hasSelection}
         title="Gerar cartões com IA"
-        onClick={() => openBulkCardsPopup(plugin)}
+        onClick={handleOpenCards}
       >
         ✨ Cartões IA
       </button>
