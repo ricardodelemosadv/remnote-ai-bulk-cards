@@ -1,0 +1,120 @@
+/*
+ * This file contains the tailwind directives and equivalent styles
+ * to replicate the behavior inside the Shadow DOM of native plugins.
+ */
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+1. Use a consistent sensible line-height in all browsers.
+2. Prevent adjustments of font size after orientation changes in iOS.
+3. Use a more readable tab size.
+*/
+
+html,
+:host-context(div) {
+  line-height: 1.5; /* 1 */
+  -webkit-text-size-adjust: 100%; /* 2 */
+  -moz-tab-size: 4; /* 3 */
+  tab-size: 4; /* 3 */
+}
+
+/*
+1. Remove the margin in all browsers.
+2. Inherit line-height from `html` so users can set them as a class directly on the `html` element.
+*/
+
+body,
+:host {
+  margin: 0; /* 1 */
+  line-height: inherit; /* 2 */
+}
+
+/**
+*/
+
+body,
+:host {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu',
+    'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+:root {
+  color-scheme: light dark;
+}
+
+* { box-sizing: border-box; }
+
+button, input, textarea { font: inherit; }
+
+.bulk-selection-action { padding: 6px; }
+.bulk-selection-button { width: 100%; white-space: nowrap; }
+
+.bulk-popup {
+  min-height: 100%;
+  padding: 24px;
+  background: var(--rn-clr-background-primary, #f8fafc);
+  color: var(--rn-clr-content-primary, #172033);
+  font-family: Inter, system-ui, sans-serif;
+}
+
+.bulk-header { display: flex; justify-content: space-between; gap: 24px; align-items: flex-start; }
+.bulk-header h1 { margin: 2px 0 4px; font-size: 28px; line-height: 1.15; }
+.bulk-eyebrow { margin: 0; color: #6d5bd0; font-weight: 800; font-size: 11px; letter-spacing: .14em; }
+.bulk-subtitle { margin: 0; opacity: .72; }
+.bulk-close { border: 0; background: transparent; color: inherit; cursor: pointer; font-size: 28px; line-height: 1; }
+
+.bulk-source, .bulk-key-panel, .bulk-generate-panel, .bulk-success {
+  margin-top: 18px;
+  padding: 16px;
+  border: 1px solid rgba(109,91,208,.22);
+  border-radius: 14px;
+  background: rgba(109,91,208,.06);
+}
+.bulk-source p { margin: 8px 0 0; max-height: 128px; overflow: auto; white-space: pre-wrap; }
+.bulk-key-panel h2, .bulk-success h2 { margin-top: 0; }
+.bulk-key-panel code { padding: 2px 5px; border-radius: 5px; background: rgba(0,0,0,.08); }
+
+.bulk-file-button, .bulk-primary, .bulk-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 38px;
+  padding: 8px 14px;
+  border-radius: 9px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  font-weight: 700;
+}
+.bulk-primary, .bulk-file-button { color: white; background: #6d5bd0; }
+.bulk-secondary { color: inherit; background: transparent; border-color: rgba(127,127,127,.35); }
+.bulk-primary:disabled { cursor: not-allowed; opacity: .55; }
+.bulk-file-button input { display: none; }
+
+.bulk-generate-panel { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; }
+.bulk-generate-panel label { display: grid; gap: 6px; font-weight: 700; }
+.bulk-generate-panel input { width: 90px; padding: 8px; border-radius: 8px; border: 1px solid rgba(127,127,127,.35); background: transparent; color: inherit; }
+
+.bulk-drafts { margin-top: 18px; }
+.bulk-drafts-title { display: flex; justify-content: space-between; align-items: center; }
+.bulk-drafts-title h2 { margin: 0 0 10px; }
+.bulk-drafts-title span { font-size: 13px; opacity: .7; }
+.bulk-card { display: grid; gap: 10px; margin-bottom: 12px; padding: 14px; border-radius: 12px; border: 1px solid rgba(127,127,127,.25); background: var(--rn-clr-background-secondary, #fff); }
+.bulk-card-disabled { opacity: .5; }
+.bulk-card label:not(.bulk-check) { display: grid; gap: 5px; font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; }
+.bulk-card textarea { min-height: 68px; resize: vertical; padding: 9px 11px; border-radius: 8px; border: 1px solid rgba(127,127,127,.3); background: transparent; color: inherit; font-weight: 400; text-transform: none; letter-spacing: normal; }
+.bulk-check { display: flex; gap: 8px; align-items: center; font-size: 13px; }
+.bulk-actions { position: sticky; bottom: 0; display: flex; justify-content: flex-end; gap: 10px; padding: 12px 0; background: var(--rn-clr-background-primary, #f8fafc); }
+.bulk-error { padding: 10px 12px; border-radius: 9px; color: #991b1b; background: #fee2e2; }
+.bulk-popup footer { margin-top: 16px; text-align: center; font-size: 12px; opacity: .6; }
+
+@media (prefers-color-scheme: dark) {
+  .bulk-popup { background: #15171c; color: #f5f7fb; }
+  .bulk-card { background: #20232a; }
+  .bulk-actions { background: #15171c; }
+  .bulk-error { color: #fecaca; background: #5f1d1d; }
+}

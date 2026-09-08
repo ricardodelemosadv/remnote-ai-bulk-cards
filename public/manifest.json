@@ -1,0 +1,22 @@
+{
+  "manifestVersion": 1,
+  "id": "ricardo_ai_bulk_cards",
+  "name": "IA — Cartões em Massa",
+  "author": "Ricardo",
+  "repoUrl": "https://github.com/ricardodelemosadv/remnote-ai-bulk-cards",
+  "version": {
+    "major": 0,
+    "minor": 0,
+    "patch": 1
+  },
+  "theme": [],
+  "enableOnMobile": false,
+  "description": "Transforma uma seleção em vários flashcards revisáveis com a API da OpenAI.",
+  "requestNative": true,
+  "requiredScopes": [
+    {
+      "type": "All",
+      "level": "ReadCreateModify"
+    }
+  ]
+}
