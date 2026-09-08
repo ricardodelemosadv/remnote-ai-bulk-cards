@@ -109,6 +109,23 @@ button, input, textarea { font: inherit; }
   white-space: nowrap;
 }
 
+.sel-tts { font-size: 16px; }
+.sel-tts-active { color: #6d5bd0; }
+
+.sel-speed {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 6px;
+  height: 26px;
+  border-radius: 6px;
+  border: 1px solid rgba(127,127,127,0.35);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.sel-speed:hover { background: rgba(109,91,208,0.12); }
+
 /* legacy — kept for safety */
 .bulk-selection-action { padding: 6px; }
 .bulk-selection-button { width: 100%; white-space: nowrap; }
