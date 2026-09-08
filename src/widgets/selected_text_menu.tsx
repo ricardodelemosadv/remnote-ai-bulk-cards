@@ -1,29 +1,8 @@
-import { renderWidget, usePlugin, useTrackerPlugin, type RNPlugin } from '@remnote/plugin-sdk';
+import { renderWidget, usePlugin, useTrackerPlugin } from '@remnote/plugin-sdk';
 import type { RichTextFormatName } from '@remnote/plugin-sdk';
-import { readSelectedSource, openBulkCardsPopup } from '../lib/remnote';
+import { readSelectedSource, openBulkCardsPopup, applyFormatToSelection } from '../lib/remnote';
 import '../style.css';
 import '../index.css';
-
-async function applyFormatToSelection(
-  plugin: RNPlugin,
-  format: RichTextFormatName,
-): Promise<void> {
-  const selection = await plugin.editor.getSelectedText();
-  if (!selection) return;
-  const { richText, range, remId } = selection;
-  const formatted = await plugin.richText.toggleTextFormatOnRange(
-    richText,
-    range.start,
-    range.end,
-    format,
-  );
-  const rem = await plugin.rem.findOne(remId);
-  if (rem) {
-    await rem.setText(formatted);
-  } else {
-    await plugin.editor.setText(formatted);
-  }
-}
 
 function SelectedTextMenu() {
   const plugin = usePlugin();
