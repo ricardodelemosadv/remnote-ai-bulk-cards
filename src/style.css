@@ -51,6 +51,65 @@ body,
 
 button, input, textarea { font: inherit; }
 
+.sel-toolbar-wrap {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 8px;
+  flex-wrap: wrap;
+}
+
+.sel-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  background: transparent;
+  color: inherit;
+  transition: background 0.15s;
+  padding: 0;
+}
+.sel-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.sel-fmt {
+  width: 30px;
+  height: 30px;
+  font-size: 15px;
+}
+.sel-fmt:not(:disabled):hover { background: rgba(109,91,208,0.15); }
+
+.sel-underline-btn u { text-decoration: underline; }
+
+.sel-color {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+}
+.sel-color:not(:disabled):hover { transform: scale(1.15); border-color: rgba(0,0,0,0.2); }
+
+.sel-yellow { background: #fde047; }
+.sel-green  { background: #4ade80; }
+.sel-red    { background: #f87171; }
+
+.sel-divider {
+  width: 1px;
+  height: 22px;
+  background: rgba(127,127,127,0.3);
+  margin: 0 2px;
+  flex-shrink: 0;
+}
+
+.sel-ai-btn {
+  font-size: 12px;
+  padding: 5px 10px;
+  min-height: 30px;
+  white-space: nowrap;
+}
+
+/* legacy — kept for safety */
 .bulk-selection-action { padding: 6px; }
 .bulk-selection-button { width: 100%; white-space: nowrap; }
 

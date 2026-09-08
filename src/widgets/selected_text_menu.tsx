@@ -1,7 +1,29 @@
-import { renderWidget, usePlugin, useTrackerPlugin } from '@remnote/plugin-sdk';
+import { renderWidget, usePlugin, useTrackerPlugin, type RNPlugin } from '@remnote/plugin-sdk';
+import type { RichTextFormatName } from '@remnote/plugin-sdk';
 import { readSelectedSource, openBulkCardsPopup } from '../lib/remnote';
 import '../style.css';
 import '../index.css';
+
+async function applyFormatToSelection(
+  plugin: RNPlugin,
+  format: RichTextFormatName,
+): Promise<void> {
+  const selection = await plugin.editor.getSelectedText();
+  if (!selection) return;
+  const { richText, range, remId } = selection;
+  const formatted = await plugin.richText.toggleTextFormatOnRange(
+    richText,
+    range.start,
+    range.end,
+    format,
+  );
+  const rem = await plugin.rem.findOne(remId);
+  if (rem) {
+    await rem.setText(formatted);
+  } else {
+    await plugin.editor.setText(formatted);
+  }
+}
 
 function SelectedTextMenu() {
   const plugin = usePlugin();
@@ -9,14 +31,56 @@ function SelectedTextMenu() {
     Boolean(await readSelectedSource(reactivePlugin)),
   );
 
+  const fmt = (format: RichTextFormatName) => () => applyFormatToSelection(plugin, format);
+
   return (
-    <div className="bulk-selection-action">
+    <div className="sel-toolbar-wrap">
       <button
-        className="bulk-primary bulk-selection-button"
+        className="sel-btn sel-fmt"
         disabled={!hasSelection}
+        title="Negrito"
+        onClick={fmt('bold')}
+      >
+        <b>B</b>
+      </button>
+      <button
+        className="sel-btn sel-fmt sel-underline-btn"
+        disabled={!hasSelection}
+        title="Sublinhar"
+        onClick={fmt('underline')}
+      >
+        <u>U</u>
+      </button>
+      <div className="sel-divider" />
+      <button
+        className="sel-btn sel-color sel-yellow"
+        disabled={!hasSelection}
+        title="Destacar amarelo"
+        onClick={fmt('Yellow')}
+        aria-label="Destacar amarelo"
+      />
+      <button
+        className="sel-btn sel-color sel-green"
+        disabled={!hasSelection}
+        title="Destacar verde"
+        onClick={fmt('Green')}
+        aria-label="Destacar verde"
+      />
+      <button
+        className="sel-btn sel-color sel-red"
+        disabled={!hasSelection}
+        title="Destacar vermelho"
+        onClick={fmt('Red')}
+        aria-label="Destacar vermelho"
+      />
+      <div className="sel-divider" />
+      <button
+        className="sel-btn sel-ai-btn bulk-primary"
+        disabled={!hasSelection}
+        title="Gerar cartões com IA"
         onClick={() => openBulkCardsPopup(plugin)}
       >
-        ✨ Cartões em massa
+        ✨ Cartões IA
       </button>
     </div>
   );
