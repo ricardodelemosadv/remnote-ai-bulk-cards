@@ -1,5 +1,27 @@
 import type { RNPlugin } from '@remnote/plugin-sdk';
+import type { RichTextFormatName } from '@remnote/plugin-sdk';
 import { SOURCE_SESSION_KEY, type DraftCard, type SourceSelection } from './constants';
+
+export async function applyFormatToSelection(
+  plugin: RNPlugin,
+  format: RichTextFormatName,
+): Promise<void> {
+  const selection = await plugin.editor.getSelectedText();
+  if (!selection) return;
+  const { richText, range, remId } = selection;
+  const formatted = await plugin.richText.toggleTextFormatOnRange(
+    richText,
+    range.start,
+    range.end,
+    format,
+  );
+  const rem = await plugin.rem.findOne(remId);
+  if (rem) {
+    await rem.setText(formatted);
+  } else {
+    await plugin.editor.setText(formatted);
+  }
+}
 
 export async function readSelectedSource(plugin: RNPlugin): Promise<SourceSelection | undefined> {
   const selection = await plugin.editor.getSelectedText();
