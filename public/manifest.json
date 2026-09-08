@@ -12,7 +12,7 @@
   "theme": [],
   "enableOnMobile": false,
   "description": "Transforma uma seleção em vários flashcards revisáveis com a API da OpenAI.",
-  "requestNative": true,
+  "requestNative": false,
   "requiredScopes": [
     {
       "type": "All",
