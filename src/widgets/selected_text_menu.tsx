@@ -5,9 +5,13 @@ import '../index.css';
 
 function SelectedTextMenu() {
   const plugin = usePlugin();
-  const hasSelection = useTrackerPlugin(async (reactivePlugin) =>
-    Boolean(await readSelectedSource(reactivePlugin)),
-  );
+  const hasSelection = useTrackerPlugin(async (reactivePlugin) => {
+    try {
+      return Boolean(await readSelectedSource(reactivePlugin));
+    } catch {
+      return false;
+    }
+  });
 
   return (
     <div className="bulk-selection-action">

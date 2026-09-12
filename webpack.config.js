@@ -158,6 +158,8 @@ if (isProd) {
           return;
         }
 
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 60_000);
         try {
           const response = await fetch('https://api.openai.com/v1/responses', {
             method: 'POST',
@@ -166,13 +168,22 @@ if (isProd) {
               'Content-Type': 'application/json',
             },
             body: JSON.stringify(req.body),
+            signal: controller.signal,
           });
           const body = await response.text();
           res.status(response.status).type('application/json').send(body);
-        } catch {
-          res.status(502).json({
-            error: { message: 'O serviço local não conseguiu acessar a OpenAI.' },
-          });
+        } catch (err) {
+          if (err && err.name === 'AbortError') {
+            res.status(504).json({
+              error: { message: 'A requisição à OpenAI excedeu o tempo limite de 60 s.' },
+            });
+          } else {
+            res.status(502).json({
+              error: { message: 'O serviço local não conseguiu acessar a OpenAI.' },
+            });
+          }
+        } finally {
+          clearTimeout(timeout);
         }
       });
 
