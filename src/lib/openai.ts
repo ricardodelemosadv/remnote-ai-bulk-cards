@@ -1,14 +1,15 @@
-import { DEFAULT_MODEL, type DraftCard } from './constants';
+import { DEFAULT_BRIDGE_HOST, DEFAULT_MODEL, type DraftCard } from './constants';
 import { normalizeCards, outputTextFromResponse } from './core';
 
 export async function generateCards(
   apiKey: string,
   sourceText: string,
   maxCards: number,
+  bridgeHost: string = DEFAULT_BRIDGE_HOST,
 ): Promise<DraftCard[]> {
   const endpoint = apiKey
     ? 'https://api.openai.com/v1/responses'
-    : 'http://localhost:8080/bridge/openai';
+    : `http://${bridgeHost}/bridge/openai`;
   const response = await fetch(endpoint, {
     method: 'POST',
     headers: {

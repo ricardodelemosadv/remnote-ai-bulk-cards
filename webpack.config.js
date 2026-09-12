@@ -128,12 +128,15 @@ if (isProd) {
         'https://remnote.com',
         'https://www.remnote.com',
         'http://localhost:8080',
+        'https://app.remnote.com',
       ]);
 
       app.use('/bridge', (req, res, next) => {
         const origin = req.headers.origin;
         if (origin && allowedOrigins.has(origin)) {
           res.setHeader('Access-Control-Allow-Origin', origin);
+        } else if (!origin) {
+          res.setHeader('Access-Control-Allow-Origin', '*');
         }
         res.setHeader('Access-Control-Allow-Private-Network', 'true');
         res.setHeader('Access-Control-Allow-Headers', 'Content-Type');

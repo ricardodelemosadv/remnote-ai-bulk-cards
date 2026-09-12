@@ -1,5 +1,7 @@
 export const SOURCE_SESSION_KEY = 'bulk-cards-source';
 export const API_KEY_LOCAL_KEY = 'openai-api-key';
+export const BRIDGE_HOST_KEY = 'bridge-host';
+export const DEFAULT_BRIDGE_HOST = 'localhost:8080';
 export const DEFAULT_MODEL = 'o4-mini';
 export const DEFAULT_MAX_CARDS = 12;
 

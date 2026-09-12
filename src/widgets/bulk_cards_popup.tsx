@@ -2,6 +2,8 @@ import { renderWidget, usePlugin } from '@remnote/plugin-sdk';
 import { useEffect, useMemo, useState } from 'react';
 import {
   API_KEY_LOCAL_KEY,
+  BRIDGE_HOST_KEY,
+  DEFAULT_BRIDGE_HOST,
   DEFAULT_MAX_CARDS,
   SOURCE_SESSION_KEY,
   type DraftCard,
@@ -18,6 +20,8 @@ function BulkCardsPopup() {
   const [source, setSource] = useState<SourceSelection>();
   const [hasKey, setHasKey] = useState(false);
   const [bridgeReady, setBridgeReady] = useState(false);
+  const [bridgeHost, setBridgeHost] = useState(DEFAULT_BRIDGE_HOST);
+  const [bridgeHostInput, setBridgeHostInput] = useState('');
   const [apiKeyInput, setApiKeyInput] = useState('');
   const [maxCards, setMaxCards] = useState(DEFAULT_MAX_CARDS);
   const [cards, setCards] = useState<DraftCard[]>([]);
@@ -27,14 +31,18 @@ function BulkCardsPopup() {
 
   useEffect(() => {
     void (async () => {
-      const [savedSource, apiKey] = await Promise.all([
+      const [savedSource, apiKey, savedHost] = await Promise.all([
         plugin.storage.getSession<SourceSelection>(SOURCE_SESSION_KEY),
         plugin.storage.getLocal<string>(API_KEY_LOCAL_KEY),
+        plugin.storage.getLocal<string>(BRIDGE_HOST_KEY),
       ]);
+      const host = savedHost || DEFAULT_BRIDGE_HOST;
+      setBridgeHost(host);
+      setBridgeHostInput(host);
       let localBridgeReady = false;
       if (!apiKey) {
         try {
-          const response = await fetch('http://localhost:8080/bridge/health');
+          const response = await fetch(`http://${host}/bridge/health`);
           localBridgeReady = response.ok && Boolean((await response.json()).ready);
         } catch {
           localBridgeReady = false;
@@ -75,6 +83,24 @@ function BulkCardsPopup() {
     setHasKey(true);
   }
 
+  async function saveBridgeHost() {
+    const host = bridgeHostInput.trim();
+    if (!host) return;
+    await plugin.storage.setLocal(BRIDGE_HOST_KEY, host);
+    setBridgeHost(host);
+    setError('');
+    try {
+      const response = await fetch(`http://${host}/bridge/health`);
+      const ready = response.ok && Boolean((await response.json()).ready);
+      setBridgeReady(ready);
+      setHasKey(ready);
+      if (!ready) setError('Bridge encontrado mas OPENAI_API_KEY não está configurada no servidor.');
+    } catch {
+      setBridgeReady(false);
+      setError(`Não foi possível conectar ao bridge em ${host}. Verifique se o servidor está rodando.`);
+    }
+  }
+
   async function generate() {
     if (!source) return;
     setBusy(true);
@@ -82,7 +108,7 @@ function BulkCardsPopup() {
     try {
       const apiKey = await plugin.storage.getLocal<string>(API_KEY_LOCAL_KEY);
       if (!apiKey && !bridgeReady) throw new Error('Conecte sua chave da OpenAI antes de gerar.');
-      setCards(await generateCards(apiKey || '', source.sourceText, maxCards));
+      setCards(await generateCards(apiKey || '', source.sourceText, maxCards, bridgeHost));
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Não foi possível gerar os cartões.');
     } finally {
@@ -163,6 +189,20 @@ function BulkCardsPopup() {
               onChange={(event) => void importKey(event.target.files?.[0])}
             />
           </label>
+          <hr style={{ margin: '12px 0', opacity: 0.3 }} />
+          <p>Ou use o bridge local (VM / servidor na rede):</p>
+          <label>
+            Host do bridge
+            <input
+              type="text"
+              placeholder="localhost:8080"
+              value={bridgeHostInput}
+              onChange={(event) => setBridgeHostInput(event.target.value)}
+            />
+          </label>
+          <button className="bulk-secondary" onClick={() => void saveBridgeHost()}>
+            Conectar ao bridge
+          </button>
         </section>
       ) : cards.length === 0 ? (
         <section className="bulk-generate-panel">
