@@ -1,0 +1,138 @@
+{
+  "name": "Health Check — Sync Monitor",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [{ "field": "cronExpression", "expression": "0 * * * *" }]
+        }
+      },
+      "id": "schedule-hourly",
+      "name": "A cada hora",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.OBSIDIAN_BASE_URL }}/",
+        "options": { "timeout": 10000 }
+      },
+      "id": "check-obsidian",
+      "name": "Ping Obsidian",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [460, 200],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "resource": "databasePage",
+        "operation": "getAll",
+        "databaseId": "={{ $env.NOTION_EXECUCOES_DATABASE_ID || 'abe2a811745b41e990ddfb7a7889aea5' }}",
+        "returnAll": false,
+        "limit": 1,
+        "sort": {
+          "sortValue": [{ "key": "created_time", "type": "created_time", "direction": "descending" }]
+        }
+      },
+      "id": "last-execution",
+      "name": "Última execução",
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2.2,
+      "position": [460, 400],
+      "credentials": { "notionApi": { "id": "notion-credential", "name": "Notion API" } }
+    },
+    {
+      "parameters": {
+        "jsCode": "const obsidianOk = $('Ping Obsidian').item.json.statusCode === 200 || $('Ping Obsidian').item.json.statusCode === 401;\nconst lastExec = $('Última execução').item.json;\nconst lastCreated = lastExec?.created_time || lastExec?.properties?.['Data']?.date?.start || null;\n\nconst now = new Date();\nconst lastExecAge = lastCreated ? (now - new Date(lastCreated)) / 3600000 : 999;\nconst syncStale = lastExecAge > 2; // alerta se última execução > 2h\n\nconst status = {\n  obsidian: obsidianOk ? 'OK' : 'OFFLINE',\n  lastExecAgeHours: Math.round(lastExecAge * 10) / 10,\n  syncStale,\n  alertNeeded: !obsidianOk || syncStale,\n  timestamp: now.toISOString()\n};\n\nreturn [{ json: status }];"
+      },
+      "id": "evaluate-health",
+      "name": "Avaliar saúde",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": false, "leftValue": "", "typeValidation": "strict" },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.alertNeeded }}",
+              "rightValue": true,
+              "operator": { "type": "boolean", "operation": "true" }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "needs-alert",
+      "name": "Precisa alertar?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const s = $json;\nconst lines = ['⚠️ *Health Check — Alerta de Sync*', ''];\n\nif (s.obsidian !== 'OK') {\n  lines.push('❌ *Obsidian REST API*: OFFLINE');\n  lines.push('→ Verifique se ngrok está rodando em RICARDO MPSP');\n  lines.push('→ `ngrok http 27123`');\n  lines.push('');\n}\n\nif (s.syncStale) {\n  lines.push(`⏰ *Último sync*: ${s.lastExecAgeHours}h atrás (esperado < 2h)`);\n  lines.push('→ Verifique o workflow \"Notion → Obsidian\" no n8n cloud');\n  lines.push('');\n}\n\nlines.push(`_${new Date().toLocaleString('pt-BR', {timeZone: 'America/Sao_Paulo'})}_`);\n\nreturn [{ json: { message: lines.join('\\n') } }];"
+      },
+      "id": "build-alert",
+      "name": "Montar alerta",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 200]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "chat_id", "value": "={{ $env.TELEGRAM_CHAT_ID }}" },
+            { "name": "text", "value": "={{ $json.message }}" },
+            { "name": "parse_mode", "value": "Markdown" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "send-telegram-alert",
+      "name": "Alerta Telegram",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1340, 200]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Tudo OK — sem alerta necessário\nconst s = $('Avaliar saúde').item.json;\nconsole.log(`[Health Check OK] Obsidian: ${s.obsidian} | Último sync: ${s.lastExecAgeHours}h atrás`);\nreturn [{ json: { status: 'ok', ...s } }];"
+      },
+      "id": "log-ok",
+      "name": "Log OK",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 420]
+    }
+  ],
+  "connections": {
+    "A cada hora": {
+      "main": [[
+        { "node": "Ping Obsidian", "type": "main", "index": 0 },
+        { "node": "Última execução", "type": "main", "index": 0 }
+      ]]
+    },
+    "Ping Obsidian": { "main": [[{ "node": "Avaliar saúde", "type": "main", "index": 0 }]] },
+    "Última execução": { "main": [[{ "node": "Avaliar saúde", "type": "main", "index": 0 }]] },
+    "Avaliar saúde": { "main": [[{ "node": "Precisa alertar?", "type": "main", "index": 0 }]] },
+    "Precisa alertar?": {
+      "main": [
+        [{ "node": "Montar alerta", "type": "main", "index": 0 }],
+        [{ "node": "Log OK", "type": "main", "index": 0 }]
+      ]
+    },
+    "Montar alerta": { "main": [[{ "node": "Alerta Telegram", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1", "saveManualExecutions": true },
+  "staticData": null,
+  "tags": ["health-check", "monitoring"],
+  "meta": { "templateCredsSetupCompleted": true }
+}
