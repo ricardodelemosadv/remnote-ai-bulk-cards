@@ -1,0 +1,168 @@
+{
+  "name": "Notion → Obsidian (sync automático)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [{ "field": "cronExpression", "expression": "={{ $env.SYNC_CRON || '*/15 * * * *' }}" }]
+        }
+      },
+      "id": "schedule-trigger",
+      "name": "Agendamento",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "resource": "databasePage",
+        "operation": "getAll",
+        "databaseId": "={{ $env.NOTION_DATABASE_ID }}",
+        "returnAll": false,
+        "limit": "={{ $env.SYNC_PAGE_SIZE || 50 }}",
+        "filterType": "manual",
+        "filters": {
+          "conditions": [
+            {
+              "key": "last_edited_time",
+              "condition": "after",
+              "timestampValue": "={{ $workflow.staticData.lastSyncAt || new Date(Date.now() - 24*3600*1000).toISOString() }}"
+            }
+          ]
+        },
+        "sort": {
+          "sortValue": [
+            { "key": "last_edited_time", "direction": "ascending" }
+          ]
+        }
+      },
+      "id": "notion-list-pages",
+      "name": "Listar páginas do Notion",
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2.2,
+      "position": [460, 300],
+      "credentials": { "notionApi": { "id": "notion-credential", "name": "Notion API" } }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": false },
+          "conditions": [
+            { "leftValue": "={{ $json.id }}", "operator": { "type": "string", "operation": "isNotEmpty" } }
+          ]
+        }
+      },
+      "id": "check-has-pages",
+      "name": "Há páginas?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "resource": "page",
+        "operation": "get",
+        "pageId": "={{ $json.id }}"
+      },
+      "id": "notion-get-page",
+      "name": "Ler conteúdo da página",
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2.2,
+      "position": [900, 220],
+      "credentials": { "notionApi": { "id": "notion-credential", "name": "Notion API" } }
+    },
+    {
+      "parameters": {
+        "resource": "block",
+        "operation": "getAll",
+        "blockId": "={{ $json.id }}",
+        "returnAll": true
+      },
+      "id": "notion-get-blocks",
+      "name": "Buscar blocos",
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2.2,
+      "position": [1120, 220],
+      "credentials": { "notionApi": { "id": "notion-credential", "name": "Notion API" } }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Converte blocos do Notion em Markdown\nconst pageData = $('Ler conteúdo da página').first().json;\nconst blocks  = $input.all().map(i => i.json);\n\nfunction richTextToMd(richTexts = []) {\n  return richTexts.map(t => {\n    let text = t.plain_text || '';\n    if (t.annotations?.code)          text = `\\`${text}\\``;\n    if (t.annotations?.bold)          text = `**${text}**`;\n    if (t.annotations?.italic)        text = `_${text}_`;\n    if (t.annotations?.strikethrough) text = `~~${text}~~`;\n    if (t.href)                        text = `[${text}](${t.href})`;\n    return text;\n  }).join('');\n}\n\nfunction blockToMd(block, depth = 0) {\n  const indent = '  '.repeat(depth);\n  const t = block.type;\n  const d = block[t] || {};\n\n  switch (t) {\n    case 'heading_1':       return `# ${richTextToMd(d.rich_text)}`;\n    case 'heading_2':       return `## ${richTextToMd(d.rich_text)}`;\n    case 'heading_3':       return `### ${richTextToMd(d.rich_text)}`;\n    case 'paragraph':       return richTextToMd(d.rich_text) || '';\n    case 'bulleted_list_item': return `${indent}- ${richTextToMd(d.rich_text)}`;\n    case 'numbered_list_item': return `${indent}1. ${richTextToMd(d.rich_text)}`;\n    case 'to_do':           return `${indent}- [${d.checked ? 'x' : ' '}] ${richTextToMd(d.rich_text)}`;\n    case 'toggle':          return `${indent}> ${richTextToMd(d.rich_text)}`;\n    case 'quote':           return `> ${richTextToMd(d.rich_text)}`;\n    case 'callout':         return `> [!NOTE]\\n> ${richTextToMd(d.rich_text)}`;\n    case 'code':            return `\\`\\`\\`${d.language || ''}\\n${richTextToMd(d.rich_text)}\\n\\`\\`\\``;\n    case 'divider':         return '---';\n    case 'image': {\n      const url = d.type === 'external' ? d.external?.url : d.file?.url;\n      return `![image](${url})`;\n    }\n    case 'bookmark':        return `[${d.url}](${d.url})`;\n    default:                return '';\n  }\n}\n\nconst title = pageData.properties?.Name?.title?.[0]?.plain_text\n           || pageData.properties?.title?.title?.[0]?.plain_text\n           || 'Sem título';\nconst notionUrl = `https://notion.so/${pageData.id.replace(/-/g, '')}`;\nconst lastEdited = pageData.last_edited_time;\n\nconst frontmatter = [\n  '---',\n  `notion_id: \"${pageData.id}\"`,\n  `notion_url: \"${notionUrl}\"`,\n  `last_synced: \"${new Date().toISOString()}\"`,\n  `last_edited: \"${lastEdited}\"`,\n  '---',\n].join('\\n');\n\nconst body = blocks.map(b => blockToMd(b)).filter(Boolean).join('\\n\\n');\nconst markdown = `${frontmatter}\\n\\n# ${title}\\n\\n${body}`;\n\nconst safeTitle = title.replace(/[/\\\\?%*:|\"<>]/g, '-');\nconst folder = $env.OBSIDIAN_VAULT_FOLDER || 'Notion Sync';\nconst filePath = `${folder}/${safeTitle}.md`;\n\nreturn [{ json: { pageId: pageData.id, title, filePath, markdown, lastEdited } }];"
+      },
+      "id": "convert-to-markdown",
+      "name": "Converter para Markdown",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1340, 220]
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "={{ $env.OBSIDIAN_BASE_URL }}/vault/{{ $json.filePath }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "Bearer {{ $env.OBSIDIAN_API_KEY }}" },
+            { "name": "Content-Type",  "value": "text/markdown" }
+          ]
+        },
+        "sendBody": true,
+        "bodyContentType": "raw",
+        "rawContentType": "text/plain",
+        "body": "={{ $json.markdown }}"
+      },
+      "id": "obsidian-write-file",
+      "name": "Gravar no Obsidian",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1560, 220]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Atualiza o timestamp do último sync bem-sucedido\n$workflow.staticData.lastSyncAt = new Date().toISOString();\nreturn $input.all();"
+      },
+      "id": "update-sync-timestamp",
+      "name": "Registrar timestamp do sync",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1780, 220]
+    },
+    {
+      "parameters": {
+        "jsCode": "const count = $input.all().length;\nconsole.log(`[notion→obsidian] nenhuma página nova. Último sync: ${$workflow.staticData.lastSyncAt}`);\nreturn [{ json: { synced: 0, message: 'Nenhuma página alterada desde o último sync.' } }];"
+      },
+      "id": "no-changes",
+      "name": "Sem alterações",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 420]
+    }
+  ],
+  "connections": {
+    "Agendamento":               { "main": [[{ "node": "Listar páginas do Notion", "type": "main", "index": 0 }]] },
+    "Listar páginas do Notion":  { "main": [[{ "node": "Há páginas?", "type": "main", "index": 0 }]] },
+    "Há páginas?": {
+      "main": [
+        [{ "node": "Ler conteúdo da página", "type": "main", "index": 0 }],
+        [{ "node": "Sem alterações",         "type": "main", "index": 0 }]
+      ]
+    },
+    "Ler conteúdo da página":    { "main": [[{ "node": "Buscar blocos",          "type": "main", "index": 0 }]] },
+    "Buscar blocos":             { "main": [[{ "node": "Converter para Markdown", "type": "main", "index": 0 }]] },
+    "Converter para Markdown":   { "main": [[{ "node": "Gravar no Obsidian",     "type": "main", "index": 0 }]] },
+    "Gravar no Obsidian":        { "main": [[{ "node": "Registrar timestamp do sync", "type": "main", "index": 0 }]] }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": ""
+  },
+  "staticData": null,
+  "meta": { "instanceId": "" },
+  "tags": [{ "createdAt": "", "updatedAt": "", "id": "sync", "name": "sync" }],
+  "pinData": {},
+  "versionId": "1"
+}

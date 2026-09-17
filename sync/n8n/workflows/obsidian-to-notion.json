@@ -1,0 +1,224 @@
+{
+  "name": "Obsidian → Notion (webhook)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "obsidian-to-notion",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook Obsidian",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [240, 300],
+      "webhookId": "obsidian-to-notion"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Valida e extrai payload do Obsidian Local REST API\n// O plugin envia: { vault, path, content }\nconst body = $input.first().json.body || $input.first().json;\n\nif (!body.path || !body.content) {\n  throw new Error('Payload inválido: campos path e content são obrigatórios.');\n}\n\n// Extrai frontmatter YAML\nconst frontmatterMatch = body.content.match(/^---\\n([\\s\\S]*?)\\n---/);\nlet frontmatter = {};\nif (frontmatterMatch) {\n  for (const line of frontmatterMatch[1].split('\\n')) {\n    const [k, ...rest] = line.split(':');\n    if (k && rest.length) frontmatter[k.trim()] = rest.join(':').trim().replace(/^\"|\"$/g, '');\n  }\n}\n\n// Remove frontmatter do conteúdo\nconst bodyWithoutFm = body.content.replace(/^---\\n[\\s\\S]*?\\n---\\n?/, '').trim();\n\n// Extrai título (primeiro H1 ou nome do arquivo)\nconst h1Match = bodyWithoutFm.match(/^# (.+)$/m);\nconst fileName = body.path.split('/').pop().replace('.md', '');\nconst title = h1Match ? h1Match[1] : fileName;\n\n// Remove o H1 do corpo\nconst bodyText = bodyWithoutFm.replace(/^# .+\\n?/, '').trim();\n\nreturn [{\n  json: {\n    notionId:   frontmatter.notion_id || null,\n    title,\n    bodyText,\n    filePath:   body.path,\n    vault:      body.vault || '',\n    frontmatter\n  }\n}];"
+      },
+      "id": "parse-markdown",
+      "name": "Parsear Markdown",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "leftValue":  "={{ $json.notionId }}",
+              "operator":   { "type": "string", "operation": "isNotEmpty" }
+            }
+          ]
+        }
+      },
+      "id": "check-existing",
+      "name": "Página já existe no Notion?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Converte Markdown em blocos do Notion\nconst text = $json.bodyText;\nconst blocks = [];\n\nfor (const rawLine of text.split('\\n')) {\n  const line = rawLine.trimEnd();\n\n  if (!line) {\n    // Parágrafo vazio\n    blocks.push({ object: 'block', type: 'paragraph', paragraph: { rich_text: [] } });\n    continue;\n  }\n\n  function mkText(content) {\n    return [{ type: 'text', text: { content } }];\n  }\n\n  if (/^### (.+)/.test(line)) {\n    blocks.push({ object: 'block', type: 'heading_3', heading_3: { rich_text: mkText(line.replace(/^### /, '')) } });\n  } else if (/^## (.+)/.test(line)) {\n    blocks.push({ object: 'block', type: 'heading_2', heading_2: { rich_text: mkText(line.replace(/^## /, '')) } });\n  } else if (/^# (.+)/.test(line)) {\n    blocks.push({ object: 'block', type: 'heading_1', heading_1: { rich_text: mkText(line.replace(/^# /, '')) } });\n  } else if (/^- \\[x\\] (.+)/i.test(line)) {\n    blocks.push({ object: 'block', type: 'to_do', to_do: { rich_text: mkText(line.replace(/^- \\[x\\] /i, '')), checked: true } });\n  } else if (/^- \\[ \\] (.+)/.test(line)) {\n    blocks.push({ object: 'block', type: 'to_do', to_do: { rich_text: mkText(line.replace(/^- \\[ \\] /, '')), checked: false } });\n  } else if (/^- (.+)/.test(line)) {\n    blocks.push({ object: 'block', type: 'bulleted_list_item', bulleted_list_item: { rich_text: mkText(line.replace(/^- /, '')) } });\n  } else if (/^\\d+\\. (.+)/.test(line)) {\n    blocks.push({ object: 'block', type: 'numbered_list_item', numbered_list_item: { rich_text: mkText(line.replace(/^\\d+\\. /, '')) } });\n  } else if (/^> (.+)/.test(line)) {\n    blocks.push({ object: 'block', type: 'quote', quote: { rich_text: mkText(line.replace(/^> /, '')) } });\n  } else if (/^---$/.test(line)) {\n    blocks.push({ object: 'block', type: 'divider', divider: {} });\n  } else {\n    blocks.push({ object: 'block', type: 'paragraph', paragraph: { rich_text: mkText(line) } });\n  }\n}\n\n// Notion limita a 100 blocos por chamada\nconst chunks = [];\nfor (let i = 0; i < blocks.length; i += 100) {\n  chunks.push(blocks.slice(i, i + 100));\n}\n\nreturn [{ json: { ...$json, blocks, chunks } }];"
+      },
+      "id": "md-to-blocks",
+      "name": "Markdown → Blocos Notion",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 220]
+    },
+    {
+      "parameters": {
+        "resource": "page",
+        "operation": "update",
+        "pageId": "={{ $json.notionId }}",
+        "propertiesUi": {
+          "propertyValues": [
+            {
+              "key": "Name",
+              "type": "title",
+              "titleValue": "={{ $json.title }}"
+            }
+          ]
+        }
+      },
+      "id": "notion-update-title",
+      "name": "Atualizar título",
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2.2,
+      "position": [1120, 180],
+      "credentials": { "notionApi": { "id": "notion-credential", "name": "Notion API" } }
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://api.notion.com/v1/blocks/{{ $json.notionId }}/children",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization",   "value": "=Bearer {{ $env.NOTION_TOKEN }}" },
+            { "name": "Notion-Version",  "value": "2022-06-28" },
+            { "name": "Content-Type",    "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "bodyContentType": "json",
+        "jsonBody": "={{ JSON.stringify({ children: $json.blocks.slice(0, 100) }) }}"
+      },
+      "id": "notion-replace-blocks",
+      "name": "Substituir blocos",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1340, 180]
+    },
+    {
+      "parameters": {
+        "resource": "page",
+        "operation": "create",
+        "databaseId": "={{ $env.NOTION_DATABASE_ID }}",
+        "title": "={{ $json.title }}",
+        "propertiesUi": {
+          "propertyValues": [
+            { "key": "Name", "type": "title", "titleValue": "={{ $json.title }}" }
+          ]
+        },
+        "blockUi": {
+          "blockValues": []
+        }
+      },
+      "id": "notion-create-page",
+      "name": "Criar página no Notion",
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2.2,
+      "position": [900, 400],
+      "credentials": { "notionApi": { "id": "notion-credential", "name": "Notion API" } }
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://api.notion.com/v1/blocks/{{ $('Criar página no Notion').first().json.id }}/children",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization",  "value": "=Bearer {{ $env.NOTION_TOKEN }}" },
+            { "name": "Notion-Version", "value": "2022-06-28" },
+            { "name": "Content-Type",   "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "bodyContentType": "json",
+        "jsonBody": "={{ JSON.stringify({ children: $('Markdown → Blocos Notion').first().json.blocks.slice(0, 100) }) }}"
+      },
+      "id": "notion-append-new-blocks",
+      "name": "Adicionar blocos à nova página",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1120, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Após criar página nova, grava o notion_id de volta no frontmatter do Obsidian\nconst notionId  = $('Criar página no Notion').first().json.id;\nconst filePath  = $('Parsear Markdown').first().json.filePath;\nconst origContent = $('Webhook Obsidian').first().json.body?.content\n                  || $('Webhook Obsidian').first().json.content || '';\n\nconst notionUrl = `https://notion.so/${notionId.replace(/-/g, '')}`;\n\nlet updated;\nif (/^---/.test(origContent)) {\n  updated = origContent\n    .replace(/^---\\n/, `---\\nnotion_id: \"${notionId}\"\\nnotion_url: \"${notionUrl}\"\\n`)\n    .replace(/notion_id: .+\\n?/, `notion_id: \"${notionId}\"\\n`)\n    .replace(/notion_url: .+\\n?/, `notion_url: \"${notionUrl}\"\\n`);\n} else {\n  updated = `---\\nnotion_id: \"${notionId}\"\\nnotion_url: \"${notionUrl}\"\\n---\\n\\n${origContent}`;\n}\n\nreturn [{ json: { notionId, filePath, updatedContent: updated } }];"
+      },
+      "id": "prepare-frontmatter-update",
+      "name": "Preparar atualização do frontmatter",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1340, 400]
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "={{ $env.OBSIDIAN_BASE_URL }}/vault/{{ $json.filePath }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "=Bearer {{ $env.OBSIDIAN_API_KEY }}" },
+            { "name": "Content-Type",  "value": "text/markdown" }
+          ]
+        },
+        "sendBody": true,
+        "bodyContentType": "raw",
+        "rawContentType": "text/plain",
+        "body": "={{ $json.updatedContent }}"
+      },
+      "id": "obsidian-update-frontmatter",
+      "name": "Gravar notion_id no arquivo",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1560, 400]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={ \"ok\": true, \"message\": \"Sync concluído.\" }"
+      },
+      "id": "respond-ok",
+      "name": "Responder 200",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1780, 300]
+    }
+  ],
+  "connections": {
+    "Webhook Obsidian":               { "main": [[{ "node": "Parsear Markdown",          "type": "main", "index": 0 }]] },
+    "Parsear Markdown":               { "main": [[{ "node": "Página já existe no Notion?", "type": "main", "index": 0 }]] },
+    "Página já existe no Notion?": {
+      "main": [
+        [{ "node": "Markdown → Blocos Notion",       "type": "main", "index": 0 }],
+        [{ "node": "Markdown → Blocos Notion",       "type": "main", "index": 0 }]
+      ]
+    },
+    "Markdown → Blocos Notion": {
+      "main": [[
+        { "node": "Atualizar título",       "type": "main", "index": 0 },
+        { "node": "Criar página no Notion", "type": "main", "index": 0 }
+      ]]
+    },
+    "Atualizar título":                { "main": [[{ "node": "Substituir blocos",              "type": "main", "index": 0 }]] },
+    "Substituir blocos":               { "main": [[{ "node": "Responder 200",                  "type": "main", "index": 0 }]] },
+    "Criar página no Notion":          { "main": [[{ "node": "Adicionar blocos à nova página", "type": "main", "index": 0 }]] },
+    "Adicionar blocos à nova página":  { "main": [[{ "node": "Preparar atualização do frontmatter", "type": "main", "index": 0 }]] },
+    "Preparar atualização do frontmatter": { "main": [[{ "node": "Gravar notion_id no arquivo", "type": "main", "index": 0 }]] },
+    "Gravar notion_id no arquivo":     { "main": [[{ "node": "Responder 200",                  "type": "main", "index": 0 }]] }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true
+  },
+  "staticData": null,
+  "meta": { "instanceId": "" },
+  "tags": [{ "id": "sync", "name": "sync" }],
+  "pinData": {},
+  "versionId": "1"
+}
