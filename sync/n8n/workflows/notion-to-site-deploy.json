@@ -1,0 +1,252 @@
+{
+  "name": "MPSP · Notion → Site (deploy 2x semana)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 20 * * 1,4"
+            }
+          ]
+        }
+      },
+      "id": "schedule-seg-qui",
+      "name": "Seg e Qui 20h BRT",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [240, 300],
+      "notes": "Cronograma alinhado com o Radar de conteúdo oficial"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.N8N_WEBHOOK_URL_BASE }}/webhook/force-site-deploy",
+        "options": {}
+      },
+      "id": "webhook-manual-trigger",
+      "name": "Webhook disparo manual",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [240, 480],
+      "webhookId": "force-site-deploy",
+      "notes": "POST aqui para forçar deploy imediato"
+    },
+    {
+      "parameters": {
+        "resource": "databasePage",
+        "operation": "getAll",
+        "databaseId": "={{ $env.NOTION_JURIS_DATABASE_ID }}",
+        "returnAll": false,
+        "limit": 100,
+        "filterType": "manual",
+        "filters": {
+          "conditions": [
+            {
+              "key": "Status",
+              "condition": "select_equals",
+              "selectValue": "Triada"
+            }
+          ]
+        },
+        "sort": {
+          "sortValue": [
+            { "key": "last_edited_time", "direction": "descending" }
+          ]
+        }
+      },
+      "id": "notion-list-juris",
+      "name": "Buscar jurisprudência Triada",
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2.2,
+      "position": [500, 300],
+      "credentials": { "notionApi": { "id": "notion-credential", "name": "Notion API" } }
+    },
+    {
+      "parameters": {
+        "resource": "databasePage",
+        "operation": "getAll",
+        "databaseId": "={{ $env.NOTION_LEGISLACAO_DATABASE_ID }}",
+        "returnAll": false,
+        "limit": 100,
+        "filterType": "manual",
+        "filters": {
+          "conditions": [
+            {
+              "key": "Status",
+              "condition": "select_equals",
+              "selectValue": "Triada"
+            }
+          ]
+        },
+        "sort": {
+          "sortValue": [
+            { "key": "last_edited_time", "direction": "descending" }
+          ]
+        }
+      },
+      "id": "notion-list-legislacao",
+      "name": "Buscar legislação Triada",
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2.2,
+      "position": [500, 480],
+      "credentials": { "notionApi": { "id": "notion-credential", "name": "Notion API" } }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Monta o payload JSON para o site a partir dos itens Triados do Notion\nconst jurisItems  = $('Buscar jurisprudência Triada').all().map(i => i.json);\nconst legisItems  = $('Buscar legislação Triada').all().map(i => i.json);\n\nfunction extractProp(page, key, fallback = '') {\n  const prop = page.properties?.[key];\n  if (!prop) return fallback;\n  switch (prop.type) {\n    case 'title':          return prop.title?.[0]?.plain_text || fallback;\n    case 'rich_text':      return prop.rich_text?.[0]?.plain_text || fallback;\n    case 'select':         return prop.select?.name || fallback;\n    case 'multi_select':   return (prop.multi_select || []).map(s => s.name);\n    case 'date':           return prop.date?.start || fallback;\n    case 'url':            return prop.url || fallback;\n    case 'checkbox':       return Boolean(prop.checkbox);\n    case 'number':         return prop.number ?? fallback;\n    default:               return fallback;\n  }\n}\n\nconst formatJuris = (page) => ({\n  id:           page.id,\n  titulo:       extractProp(page, 'Nome') || extractProp(page, 'Name') || extractProp(page, 'Título'),\n  tribunal:     extractProp(page, 'Tribunal') || extractProp(page, 'Órgão'),\n  tipo:         extractProp(page, 'Tipo'),\n  disciplinas:  extractProp(page, 'Disciplinas', []),\n  relevancia:   extractProp(page, 'Relevância MP') || extractProp(page, 'Relevância'),\n  tese:         extractProp(page, 'Tese') || extractProp(page, 'Ementa') || '',\n  fonte:        extractProp(page, 'Fonte oficial') || extractProp(page, 'URL Fonte'),\n  stable_id:    extractProp(page, 'stable_id') || '',\n  data_julgamento: extractProp(page, 'Data de julgamento') || extractProp(page, 'Data'),\n  notion_url:   `https://notion.so/${page.id.replace(/-/g, '')}`,\n  atualizado_em: page.last_edited_time,\n});\n\nconst formatLegis = (page) => ({\n  id:           page.id,\n  titulo:       extractProp(page, 'Nome') || extractProp(page, 'Name') || extractProp(page, 'Título'),\n  tipo:         extractProp(page, 'Tipo') || 'Lei',\n  numero:       extractProp(page, 'Número') || '',\n  ano:          extractProp(page, 'Ano') || '',\n  vigencia:     extractProp(page, 'Vigência') || extractProp(page, 'Data de vigência'),\n  publicacao:   extractProp(page, 'Publicação') || extractProp(page, 'DOU'),\n  disciplinas:  extractProp(page, 'Disciplinas', []),\n  relevancia:   extractProp(page, 'Relevância MP') || extractProp(page, 'Relevância'),\n  resumo:       extractProp(page, 'Resumo') || extractProp(page, 'Ementa') || '',\n  fonte:        extractProp(page, 'Fonte oficial') || extractProp(page, 'URL Fonte'),\n  stable_id:    extractProp(page, 'stable_id') || '',\n  notion_url:   `https://notion.so/${page.id.replace(/-/g, '')}`,\n  atualizado_em: page.last_edited_time,\n});\n\nconst jurisprudencia = jurisItems.map(formatJuris).filter(j => j.titulo);\nconst legislacao     = legisItems.map(formatLegis).filter(l => l.titulo);\n\nconst corte = new Date().toISOString().slice(0, 10);\nconst payload = {\n  meta: {\n    gerado_em:       new Date().toISOString(),\n    corte:           corte,\n    total_juris:     jurisprudencia.length,\n    total_legislacao: legislacao.length,\n    fonte:           'Notion DB · Jurisprudência + DB · Alterações Legislativas',\n    gate:            'Conteúdo Triado — aguarda validação humana de mérito antes de Integração',\n  },\n  jurisprudencia,\n  legislacao,\n};\n\nreturn [{ json: { payload, corte, totalItems: jurisprudencia.length + legislacao.length } }];"
+      },
+      "id": "build-site-payload",
+      "name": "Montar payload do site",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [760, 380]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "leftValue":  "={{ $json.totalItems }}",
+              "operator":   { "type": "number", "operation": "gt" },
+              "rightValue": 0
+            }
+          ]
+        }
+      },
+      "id": "check-has-content",
+      "name": "Tem conteúdo?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [980, 380]
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "=https://api.github.com/repos/{{ $env.GITHUB_REPO_OWNER }}/{{ $env.GITHUB_REPO_NAME }}/contents/public/notion-content.json",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization",        "value": "=Bearer {{ $env.GITHUB_TOKEN }}" },
+            { "name": "Accept",               "value": "application/vnd.github.v3+json" },
+            { "name": "X-GitHub-Api-Version", "value": "2022-11-28" }
+          ]
+        },
+        "sendBody": true,
+        "bodyContentType": "json",
+        "jsonBody": "={\n  \"message\": \"chore(content): notion sync {{ $json.corte }}\",\n  \"content\": \"{{ Buffer.from(JSON.stringify($json.payload, null, 2)).toString('base64') }}\",\n  \"sha\": \"{{ $workflow.staticData.lastGithubSha || '' }}\"\n}"
+      },
+      "id": "push-to-github",
+      "name": "Push notion-content.json → GitHub",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1200, 300],
+      "notes": "Atualiza public/notion-content.json no repo do site — o commit aciona auto-deploy Vercel"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Salva o SHA do arquivo para o próximo update (evita conflito)\nif ($input.first().json?.content?.sha) {\n  $workflow.staticData.lastGithubSha = $input.first().json.content.sha;\n}\nreturn $input.all();"
+      },
+      "id": "save-github-sha",
+      "name": "Salvar SHA do GitHub",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1420, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.VERCEL_DEPLOY_HOOK_URL }}",
+        "options": {}
+      },
+      "id": "vercel-deploy-hook",
+      "name": "Trigger Vercel Deploy Hook",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1200, 460],
+      "notes": "Fallback: dispara o deploy hook diretamente se o GitHub push não acionar o CI"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
+        "sendBody": true,
+        "bodyContentType": "json",
+        "jsonBody": "={\n  \"chat_id\": \"{{ $env.TELEGRAM_CHAT_ID }}\",\n  \"text\": \"✅ *Site MPSP atualizado*\\n\\n📊 {{ $('Montar payload do site').first().json.totalItems }} itens sincronizados\\n⚖️ Jurisprudência: {{ $('Montar payload do site').first().json.payload.meta.total_juris }}\\n📜 Legislação: {{ $('Montar payload do site').first().json.payload.meta.total_legislacao }}\\n\\n🗓️ Corte: {{ $('Montar payload do site').first().json.corte }}\\n\\n🔗 https://jurismp.xyz\",\n  \"parse_mode\": \"Markdown\"\n}"
+      },
+      "id": "telegram-notify-ok",
+      "name": "Telegram — deploy concluído",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1640, 380]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
+        "sendBody": true,
+        "bodyContentType": "json",
+        "jsonBody": "={\n  \"chat_id\": \"{{ $env.TELEGRAM_CHAT_ID }}\",\n  \"text\": \"⚠️ *Site MPSP — sem conteúdo Triado*\\n\\nNenhum item com status Triada encontrado nas DBs do Notion. Deploy não realizado.\",\n  \"parse_mode\": \"Markdown\"\n}"
+      },
+      "id": "telegram-notify-empty",
+      "name": "Telegram — sem conteúdo",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1200, 600]
+    },
+    {
+      "parameters": {
+        "resource": "databasePage",
+        "operation": "create",
+        "databaseId": "={{ $env.NOTION_EXECUCOES_DATABASE_ID }}",
+        "title": "=Deploy site — {{ $('Montar payload do site').first().json.corte }}",
+        "propertiesUi": {
+          "propertyValues": [
+            { "key": "Status",     "type": "select",    "selectValue": "Concluído" },
+            { "key": "Fluxo",      "type": "rich_text", "textValue": "Notion → Site (deploy 2x semana)" },
+            { "key": "Volume",     "type": "number",    "numberValue": "={{ $('Montar payload do site').first().json.totalItems }}" },
+            { "key": "Observação", "type": "rich_text", "textValue": "=Juris: {{ $('Montar payload do site').first().json.payload.meta.total_juris }} | Legis: {{ $('Montar payload do site').first().json.payload.meta.total_legislacao }}" }
+          ]
+        }
+      },
+      "id": "notion-log-execucao",
+      "name": "Log na DB · Execuções",
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2.2,
+      "position": [1860, 380],
+      "credentials": { "notionApi": { "id": "notion-credential", "name": "Notion API" } }
+    }
+  ],
+  "connections": {
+    "Seg e Qui 20h BRT":                 { "main": [[{ "node": "Buscar jurisprudência Triada", "type": "main", "index": 0 }, { "node": "Buscar legislação Triada", "type": "main", "index": 0 }]] },
+    "Webhook disparo manual":            { "main": [[{ "node": "Buscar jurisprudência Triada", "type": "main", "index": 0 }, { "node": "Buscar legislação Triada", "type": "main", "index": 0 }]] },
+    "Buscar jurisprudência Triada":      { "main": [[{ "node": "Montar payload do site",       "type": "main", "index": 0 }]] },
+    "Buscar legislação Triada":          { "main": [[{ "node": "Montar payload do site",       "type": "main", "index": 0 }]] },
+    "Montar payload do site":            { "main": [[{ "node": "Tem conteúdo?",                "type": "main", "index": 0 }]] },
+    "Tem conteúdo?": {
+      "main": [
+        [{ "node": "Push notion-content.json → GitHub", "type": "main", "index": 0 },
+         { "node": "Trigger Vercel Deploy Hook",         "type": "main", "index": 0 }],
+        [{ "node": "Telegram — sem conteúdo",           "type": "main", "index": 0 }]
+      ]
+    },
+    "Push notion-content.json → GitHub": { "main": [[{ "node": "Salvar SHA do GitHub",        "type": "main", "index": 0 }]] },
+    "Salvar SHA do GitHub":              { "main": [[{ "node": "Telegram — deploy concluído", "type": "main", "index": 0 }]] },
+    "Trigger Vercel Deploy Hook":        { "main": [[{ "node": "Telegram — deploy concluído", "type": "main", "index": 0 }]] },
+    "Telegram — deploy concluído":      { "main": [[{ "node": "Log na DB · Execuções",        "type": "main", "index": 0 }]] }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "timezone": "America/Sao_Paulo",
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "staticData": { "lastGithubSha": "" },
+  "meta": { "instanceId": "" },
+  "tags": [{ "id": "sync", "name": "sync" }, { "id": "site", "name": "site" }],
+  "pinData": {},
+  "versionId": "1"
+}
