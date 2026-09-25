@@ -1,0 +1,37 @@
+{
+  "_comment": "Esquema de referência para CHECKPOINT-LEGAL-DELTA-YYYYMMDD.json",
+  "_version": "1.0",
+  "sha256": "PREENCHER_APÓS_GERAR_O_ARQUIVO",
+  "batch_id": "LEGAL-DELTA-20260924",
+  "generated_at": "2026-09-24T20:00:00Z",
+  "source": "OneDrive/JurisMPSP/delta-20260924",
+  "total": 2,
+  "notes": [
+    {
+      "stable_id": "stj-inf901-001",
+      "title": "STJ — Inf. 901 — Recurso Especial — Prescrição intercorrente",
+      "type": "jurisprudencia",
+      "tribunal": "STJ",
+      "numero": "REsp 1.234.567/SP",
+      "data_julgamento": "2026-09-10",
+      "ementa": "A prescrição intercorrente no processo de execução fiscal conta-se a partir da ciência da Fazenda acerca da inexistência de bens penhoráveis.",
+      "tags": ["prescrição", "execução-fiscal", "STJ"],
+      "source": "https://scon.stj.jus.br/SCON/",
+      "created_at": "2026-09-24T18:00:00Z",
+      "content": "## Holding\n\nA Primeira Seção do STJ fixou tese de que...\n\n## Relevância\n\nEssencial para execuções fiscais travadas há mais de 5 anos sem localização de bens.\n\n## Referências\n\n- [[STJ — Súmula 314]]\n- [[Art. 40 da LEF]]"
+    },
+    {
+      "stable_id": "stj-inf901-002",
+      "title": "STJ — Inf. 901 — Habeas Corpus — Prisão preventiva e duração razoável",
+      "type": "jurisprudencia",
+      "tribunal": "STJ",
+      "numero": "HC 987.654/RJ",
+      "data_julgamento": "2026-09-11",
+      "ementa": "O excesso de prazo na formação da culpa, não justificado por complexidade do feito, enseja relaxamento da prisão preventiva.",
+      "tags": ["prisão-preventiva", "excesso-de-prazo", "habeas-corpus", "STJ"],
+      "source": "https://scon.stj.jus.br/SCON/",
+      "created_at": "2026-09-24T18:01:00Z",
+      "content": "## Holding\n\n...\n\n## Referências\n\n- [[CPP art. 316]]\n- [[Súmula Vinculante 21 — STF]]"
+    }
+  ]
+}
