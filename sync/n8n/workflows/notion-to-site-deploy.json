@@ -123,10 +123,40 @@
     },
     {
       "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/repos/{{ $env.GITHUB_REPO_OWNER }}/{{ $env.GITHUB_REPO_NAME }}/contents/public/notion-content.json",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization",        "value": "=Bearer {{ $env.GITHUB_TOKEN }}" },
+            { "name": "Accept",               "value": "application/vnd.github.v3+json" },
+            { "name": "X-GitHub-Api-Version", "value": "2022-11-28" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "github-get-sha",
+      "name": "Obter SHA atual do arquivo",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1200, 300],
+      "continueOnFail": true,
+      "notes": "GET para obter o SHA atual — necessário para PUT. Falha silenciosa se arquivo não existir ainda (primeiro deploy)"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Prepara o payload para o GitHub API\n// Buffer.from não existe no sandbox do n8n — usa btoa() com encodeURIComponent\nconst payload      = $('Montar payload do site').first().json.payload;\nconst corte        = $('Montar payload do site').first().json.corte;\nconst jsonStr      = JSON.stringify(payload, null, 2);\n\n// Encode para base64 (compatível com n8n sandbox)\nconst base64Content = btoa(unescape(encodeURIComponent(jsonStr)));\n\n// SHA do arquivo existente (null se for primeiro deploy)\nconst existingSha = $input.first().json?.sha || $workflow.staticData.lastGithubSha || null;\n\nconst body = {\n  message: `chore(content): notion sync ${corte}`,\n  content: base64Content,\n};\nif (existingSha) body.sha = existingSha;\n\nreturn [{ json: { body, corte } }];"
+      },
+      "id": "prepare-github-push",
+      "name": "Preparar push GitHub",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1420, 300]
+    },
+    {
+      "parameters": {
         "method": "PUT",
         "url": "=https://api.github.com/repos/{{ $env.GITHUB_REPO_OWNER }}/{{ $env.GITHUB_REPO_NAME }}/contents/public/notion-content.json",
-        "authentication": "genericCredentialType",
-        "genericAuthType": "httpHeaderAuth",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
@@ -137,24 +167,25 @@
         },
         "sendBody": true,
         "bodyContentType": "json",
-        "jsonBody": "={\n  \"message\": \"chore(content): notion sync {{ $json.corte }}\",\n  \"content\": \"{{ Buffer.from(JSON.stringify($json.payload, null, 2)).toString('base64') }}\",\n  \"sha\": \"{{ $workflow.staticData.lastGithubSha || '' }}\"\n}"
+        "jsonBody": "={{ JSON.stringify($json.body) }}",
+        "options": {}
       },
       "id": "push-to-github",
       "name": "Push notion-content.json → GitHub",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1200, 300],
-      "notes": "Atualiza public/notion-content.json no repo do site — o commit aciona auto-deploy Vercel"
+      "position": [1640, 300],
+      "notes": "Commit aciona auto-deploy Vercel"
     },
     {
       "parameters": {
-        "jsCode": "// Salva o SHA do arquivo para o próximo update (evita conflito)\nif ($input.first().json?.content?.sha) {\n  $workflow.staticData.lastGithubSha = $input.first().json.content.sha;\n}\nreturn $input.all();"
+        "jsCode": "// Salva o SHA para o próximo ciclo\nconst sha = $input.first().json?.content?.sha;\nif (sha) $workflow.staticData.lastGithubSha = sha;\nreturn $input.all();"
       },
       "id": "save-github-sha",
       "name": "Salvar SHA do GitHub",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1420, 300]
+      "position": [1860, 300]
     },
     {
       "parameters": {
@@ -228,15 +259,17 @@
     "Montar payload do site":            { "main": [[{ "node": "Tem conteúdo?",                "type": "main", "index": 0 }]] },
     "Tem conteúdo?": {
       "main": [
-        [{ "node": "Push notion-content.json → GitHub", "type": "main", "index": 0 },
-         { "node": "Trigger Vercel Deploy Hook",         "type": "main", "index": 0 }],
+        [{ "node": "Obter SHA atual do arquivo",        "type": "main", "index": 0 }],
         [{ "node": "Telegram — sem conteúdo",           "type": "main", "index": 0 }]
       ]
     },
-    "Push notion-content.json → GitHub": { "main": [[{ "node": "Salvar SHA do GitHub",        "type": "main", "index": 0 }]] },
-    "Salvar SHA do GitHub":              { "main": [[{ "node": "Telegram — deploy concluído", "type": "main", "index": 0 }]] },
-    "Trigger Vercel Deploy Hook":        { "main": [[{ "node": "Telegram — deploy concluído", "type": "main", "index": 0 }]] },
-    "Telegram — deploy concluído":      { "main": [[{ "node": "Log na DB · Execuções",        "type": "main", "index": 0 }]] }
+    "Obter SHA atual do arquivo":        { "main": [[{ "node": "Preparar push GitHub",           "type": "main", "index": 0 }]] },
+    "Preparar push GitHub":              { "main": [[{ "node": "Push notion-content.json → GitHub", "type": "main", "index": 0 },
+                                                     { "node": "Trigger Vercel Deploy Hook",        "type": "main", "index": 0 }]] },
+    "Push notion-content.json → GitHub": { "main": [[{ "node": "Salvar SHA do GitHub",            "type": "main", "index": 0 }]] },
+    "Salvar SHA do GitHub":              { "main": [[{ "node": "Telegram — deploy concluído",     "type": "main", "index": 0 }]] },
+    "Trigger Vercel Deploy Hook":        { "main": [[{ "node": "Telegram — deploy concluído",     "type": "main", "index": 0 }]] },
+    "Telegram — deploy concluído":      { "main": [[{ "node": "Log na DB · Execuções",            "type": "main", "index": 0 }]] }
   },
   "settings": {
     "executionOrder": "v1",

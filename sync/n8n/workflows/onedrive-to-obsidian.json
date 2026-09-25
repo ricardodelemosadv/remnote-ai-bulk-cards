@@ -1,0 +1,206 @@
+{
+  "name": "OneDrive → Obsidian (import automático)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [{ "field": "cronExpression", "expression": "0 6 * * *" }]
+        }
+      },
+      "id": "schedule-daily",
+      "name": "Diário 06h",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [240, 300],
+      "notes": "Roda todo dia às 06h — puxa deltas do OneDrive e importa no vault"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "trigger-onedrive-import",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-manual",
+      "name": "Webhook disparo manual",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [240, 480],
+      "webhookId": "trigger-onedrive-import"
+    },
+    {
+      "parameters": {
+        "url": "=https://graph.microsoft.com/v1.0/me/drive/root:/{{ $env.ONEDRIVE_FOLDER || 'JurisMPSP' }}:/delta",
+        "authentication": "oAuth2",
+        "genericAuthType": "oAuth2Api",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Accept", "value": "application/json" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "onedrive-delta",
+      "name": "OneDrive delta",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [480, 380],
+      "credentials": { "oAuth2Api": { "id": "msgraph-credential", "name": "Microsoft Graph OAuth2" } },
+      "notes": "Requer: Microsoft Graph OAuth2 com scope Files.Read. Retorna apenas arquivos alterados desde o último delta token."
+    },
+    {
+      "parameters": {
+        "jsCode": "// Filtra apenas arquivos .md novos/modificados\nconst items = $input.first().json?.value || [];\nconst deltaLink = $input.first().json?.['@odata.deltaLink'] || null;\n\n// Salva o deltaLink para o próximo ciclo (só busca o que mudou)\nif (deltaLink) $workflow.staticData.lastDeltaLink = deltaLink;\n\nconst mdFiles = items.filter(f => \n  !f.deleted && \n  f.file && \n  f.name?.endsWith('.md') &&\n  f.size > 0\n);\n\nconsole.log(`[onedrive-delta] ${items.length} itens, ${mdFiles.length} .md para importar`);\n\nif (mdFiles.length === 0) return [{ json: { skip: true, message: 'Sem arquivos novos no OneDrive.' } }];\nreturn mdFiles.map(f => ({ json: f }));"
+      },
+      "id": "filter-md-files",
+      "name": "Filtrar .md novos",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [700, 380]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            { "leftValue": "={{ $json.skip }}", "operator": { "type": "boolean", "operation": "false" } }
+          ]
+        }
+      },
+      "id": "check-has-files",
+      "name": "Tem arquivos?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [920, 380]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json['@microsoft.graph.downloadUrl'] || ('https://graph.microsoft.com/v1.0/me/drive/items/' + $json.id + '/content') }}",
+        "options": { "response": { "response": { "responseFormat": "text" } } }
+      },
+      "id": "download-file",
+      "name": "Baixar conteúdo",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1140, 280],
+      "notes": "Baixa o conteúdo do arquivo .md direto do OneDrive"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Converte arquivo .md do OneDrive para formato de nota e envia ao Obsidian\nconst fileInfo   = $('Filtrar .md novos').item.json;\nconst content    = $input.first().json;\nconst folder     = $env.OBSIDIAN_VAULT_FOLDER || '01-Entrada';\n\n// Sanitiza nome do arquivo\nconst safeName = fileInfo.name.replace(/[\\/\\\\?%*:|\"<>]/g, '-');\nconst filePath = `${folder}/${safeName}`;\n\n// Injeta metadados se não tiver frontmatter\nlet body = typeof content === 'string' ? content : JSON.stringify(content);\nif (!body.startsWith('---')) {\n  const fm = [\n    '---',\n    `onedrive_id: \"${fileInfo.id}\"`,\n    `onedrive_path: \"${fileInfo.parentReference?.path || ''}/${fileInfo.name}\"`,\n    `imported_at: \"${new Date().toISOString()}\"`,\n    `modified_at: \"${fileInfo.lastModifiedDateTime}\"`,\n    '---',\n    '',\n  ].join('\\n');\n  body = fm + body;\n}\n\nreturn [{ json: { filePath, content: body, fileName: fileInfo.name } }];"
+      },
+      "id": "prepare-note",
+      "name": "Preparar nota",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1360, 280]
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "={{ $env.OBSIDIAN_BASE_URL }}/vault/{{ encodeURIComponent($json.filePath) }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "=Bearer {{ $env.OBSIDIAN_API_KEY }}" },
+            { "name": "Content-Type",  "value": "text/markdown" }
+          ]
+        },
+        "sendBody": true,
+        "bodyContentType": "raw",
+        "rawContentType": "text/plain",
+        "body": "={{ $json.content }}",
+        "options": { "timeout": 15000 }
+      },
+      "id": "obsidian-write",
+      "name": "Gravar no Obsidian",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1580, 280],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Resumo do batch\nconst allItems = $input.all();\nconst ok    = allItems.filter(i => !i.json.error).length;\nconst fail  = allItems.filter(i =>  i.json.error).length;\nconsole.log(`[onedrive→obsidian] importadas: ${ok}, erros: ${fail}`);\nreturn [{ json: { imported: ok, errors: fail, timestamp: new Date().toISOString() } }];"
+      },
+      "id": "summarize",
+      "name": "Resumo",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1800, 280]
+    },
+    {
+      "parameters": {
+        "resource": "databasePage",
+        "operation": "create",
+        "databaseId": "={{ $env.NOTION_EXECUCOES_DATABASE_ID || 'abe2a811745b41e990ddfb7a7889aea5' }}",
+        "title": "=Import OneDrive → Obsidian — {{ new Date().toISOString().slice(0,10) }}",
+        "propertiesUi": {
+          "propertyValues": [
+            { "key": "Status",     "type": "select",    "selectValue": "={% if $json.errors > 0 %}Parcial{% else %}Concluído{% endif %}" },
+            { "key": "Fluxo",      "type": "rich_text", "textValue": "OneDrive → Obsidian" },
+            { "key": "Volume",     "type": "number",    "numberValue": "={{ $json.imported }}" },
+            { "key": "Observação", "type": "rich_text", "textValue": "=Importadas: {{ $json.imported }} | Erros: {{ $json.errors }}" }
+          ]
+        }
+      },
+      "id": "log-execucoes",
+      "name": "Log na DB Execuções",
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2.2,
+      "position": [2020, 280],
+      "credentials": { "notionApi": { "id": "notion-credential", "name": "Notion API" } }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
+        "sendBody": true,
+        "bodyContentType": "json",
+        "jsonBody": "={\"chat_id\": \"{{ $env.TELEGRAM_CHAT_ID }}\", \"text\": \"📂 *OneDrive → Obsidian concluído*\\n\\n✅ Importadas: {{ $('Resumo').first().json.imported }}\\n❌ Erros: {{ $('Resumo').first().json.errors }}\", \"parse_mode\": \"Markdown\"}",
+        "options": {}
+      },
+      "id": "telegram-done",
+      "name": "Telegram — importação concluída",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2240, 280]
+    },
+    {
+      "parameters": {
+        "jsCode": "console.log('[onedrive→obsidian] Sem arquivos novos no OneDrive.');\nreturn [{ json: { skip: true } }];"
+      },
+      "id": "no-files",
+      "name": "Sem arquivos novos",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1140, 500]
+    }
+  ],
+  "connections": {
+    "Diário 06h":              { "main": [[{ "node": "OneDrive delta",            "type": "main", "index": 0 }]] },
+    "Webhook disparo manual":  { "main": [[{ "node": "OneDrive delta",            "type": "main", "index": 0 }]] },
+    "OneDrive delta":          { "main": [[{ "node": "Filtrar .md novos",         "type": "main", "index": 0 }]] },
+    "Filtrar .md novos":       { "main": [[{ "node": "Tem arquivos?",             "type": "main", "index": 0 }]] },
+    "Tem arquivos?": {
+      "main": [
+        [{ "node": "Baixar conteúdo", "type": "main", "index": 0 }],
+        [{ "node": "Sem arquivos novos", "type": "main", "index": 0 }]
+      ]
+    },
+    "Baixar conteúdo":     { "main": [[{ "node": "Preparar nota",             "type": "main", "index": 0 }]] },
+    "Preparar nota":       { "main": [[{ "node": "Gravar no Obsidian",        "type": "main", "index": 0 }]] },
+    "Gravar no Obsidian":  { "main": [[{ "node": "Resumo",                    "type": "main", "index": 0 }]] },
+    "Resumo":              { "main": [[{ "node": "Log na DB Execuções",       "type": "main", "index": 0 }]] },
+    "Log na DB Execuções": { "main": [[{ "node": "Telegram — importação concluída", "type": "main", "index": 0 }]] }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "timezone": "America/Sao_Paulo",
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "staticData": null,
+  "tags": [{ "id": "sync", "name": "sync" }, { "id": "onedrive", "name": "onedrive" }],
+  "versionId": "1"
+}
